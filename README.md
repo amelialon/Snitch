@@ -7,6 +7,15 @@ where spoken claims and the CV disagree. It never scores a candidate or recommen
 Read [context.md](context.md) first (what this is and the rules it must not break), then
 [SPEC.md](SPEC.md) (product behavior) and [architecture.md](architecture.md) (how it is built).
 
+## Clone setup
+
+```bash
+cp .env.example backend/.env              # optional — offline demo needs no keys
+cp web/.env.local.example web/.env.local    # optional — defaults to http://localhost:8000
+```
+
+Never commit `backend/.env`, `web/.env.local`, or `*-service-account.json`.
+
 ## Run the demo (no API keys)
 
 ```bash

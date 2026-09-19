@@ -1,8 +1,12 @@
 .env
 .env.*
 !.env.example
+!*.env.example
+!.env.local.example
 backend/.venv/
-backend/data/
+# Local interview uploads (runtime); keep folder + README, never commit interview blobs
+backend/data/*
+!backend/data/README.md
 __pycache__/
 *.egg-info/
 .pytest_cache/
