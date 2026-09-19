@@ -39,7 +39,11 @@ function Badge({ children, title }: { children: React.ReactNode; title?: string 
 export function AnalysisBoxes({ report, active, onToggle }: Props) {
   const box = (mode: HighlightMode) =>
     `rounded-lg border p-4 text-left transition-colors hover:bg-bg ${
-      active === mode ? "border-mark-strong ring-2 ring-mark-strong/40" : "border-border bg-surface"
+      active === mode
+        ? mode === "ai"
+          ? "border-hl-ai ring-2 ring-hl-ai/40"
+          : "border-mark-strong ring-2 ring-mark-strong/40"
+        : "border-border bg-surface"
     }`;
 
   const ai = report.ai_text_summary;

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  clock,
   deleteInterview,
   getInterview,
   getTranscript,
@@ -211,32 +210,6 @@ export default function ReviewPage() {
                     />
                   );
                 })}
-              </section>
-
-              <section className="rounded-lg border border-border bg-surface p-4">
-                <h2 className="text-sm font-semibold">CV / Interview Consistency</h2>
-                {report.cv_findings.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted">Nothing notable, or no CV was analyzed.</p>
-                ) : (
-                  <ul className="mt-3 space-y-3">
-                    {report.cv_findings.map((finding, i) => {
-                      const unit = finding.unit_id ? report.units.find((u) => u.id === finding.unit_id) : null;
-                      return (
-                        <li key={i} className="text-sm">
-                          <div className="flex items-center gap-2">
-                            {unit && (
-                              <button onClick={() => seek(unit.answer_start)} className="font-mono text-xs text-muted hover:text-accent">
-                                {clock(unit.answer_start)}
-                              </button>
-                            )}
-                          </div>
-                          <p className="mt-1">{finding.claim}</p>
-                          <p className="mt-0.5 text-muted">{finding.cv_evidence}</p>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
               </section>
 
               <section className="rounded-lg border border-border bg-surface p-4">
