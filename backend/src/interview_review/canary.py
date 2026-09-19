@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# How the instruction reached the candidate's machine. Audio = spoken into the call's audio;
+# visual = printed onto something the candidate's screen shows (our video tile, a shared slide).
+Channel = Literal["audio", "visual"]
 
 
 class QuestionEvent(BaseModel):
@@ -34,8 +39,13 @@ class CanaryEvent(BaseModel):
     question_id: str | None = None
     expected_marker: str
     instruction: str = ""
+    channel: Channel = "audio"
+    # outgoing-audio-mix (Daily room), zoom-camera-overlay, zoom-share-app-sound, zoom-computer-audio…
     delivery_method: str = "outgoing-audio-mix"
-    gain_db: float | None = None
+    # Zoom, Daily, Meet… kept per SPEC §6 so survival can be analysed per platform.
+    platform: str | None = None
+    gain_db: float | None = None  # audio only
+    overlay_opacity: float | None = None  # visual only, 0–1
     sent_at: datetime
     finished_at: datetime | None = None
     # Set after transcription by check_marker; None until then.

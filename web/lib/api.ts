@@ -64,8 +64,11 @@ export interface CanaryEvent {
   question_id?: string | null;
   expected_marker: string;
   instruction?: string;
+  channel?: "audio" | "visual";
   delivery_method?: string;
+  platform?: string | null;
   gain_db?: number | null;
+  overlay_opacity?: number | null;
   sent_at: string;
   finished_at?: string | null;
   response_contained_marker?: boolean | null;

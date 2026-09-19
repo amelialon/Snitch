@@ -71,3 +71,30 @@ def test_checking_a_canary_against_an_answer_records_the_result(client):
     log = client.get("/interviews/i1/session").json()
     assert log["canaries"][0]["response_contained_marker"] is True
     assert log["canaries"][0]["matched_text"] == "lighthouse"
+
+
+def test_a_visual_canary_records_its_channel_platform_and_opacity(client):
+    client.post(
+        "/interviews/i1/canaries",
+        json={
+            "canary_id": "CAN-002",
+            "expected_marker": "orchard",
+            "channel": "visual",
+            "delivery_method": "zoom-camera-overlay",
+            "platform": "zoom",
+            "overlay_opacity": 0.35,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    event = client.get("/interviews/i1/session").json()["canaries"][0]
+
+    assert event["channel"] == "visual"
+    assert event["platform"] == "zoom"
+    assert event["overlay_opacity"] == 0.35
+    assert event["gain_db"] is None
+    # Older events without the field default to audio, so existing Daily-room logs still load.
+    assert client.post(
+        "/interviews/i1/canaries",
+        json={"canary_id": "CAN-001", "expected_marker": "lighthouse", "sent_at": datetime.now(timezone.utc).isoformat()},
+    ).json()["canaries"][-1]["channel"] == "audio"

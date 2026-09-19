@@ -52,6 +52,8 @@ cd web && npx tsc --noEmit
 - `backend/` — the pipeline and API. `review.py` is the pure core that decides flags;
   `adapters/` holds the vendor and storage implementations behind `ports.py`.
 - `web/` — Next.js app: upload, live progress, and the review page.
+- `zoom-app/` — Zoom App that injects a canary (visual on your camera, audio via share) inside a
+  Zoom meeting and logs it to the backend. See [zoom-app/README.md](zoom-app/README.md).
 - `firebase/` — deny-all security rules for the no-auth demo.
 
 ## Status
@@ -60,5 +62,7 @@ Working: upload → transcribe → segment → baseline → timing/delivery/cont
 report, with CV consistency and reviewer feedback. Live interview room (Daily) with the canary
 tooling — manifest load, preload, preview, gain, Send / Send+Ask into the outgoing audio mix,
 question timestamps, and marker detection. Set `NEXT_PUBLIC_DAILY_ROOM_URL` to use the room.
+Zoom App (`zoom-app/`) with the same canaries: visual overlay on the outgoing camera (Layers API)
+and audio via app-share-with-sound; needs a Marketplace app + ngrok (see its README).
 Gaze/prosody signals, separate clean-mic recording, and the bias eval set are post-demo
 (architecture.md §10–§11).
