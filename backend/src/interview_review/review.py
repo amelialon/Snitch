@@ -162,9 +162,11 @@ class _Answers:
         return unit.parent_id if unit.parent_id in self.by_id else unit.id
 
     def is_baseline(self, unit: Unit) -> bool:
-        return unit.is_baseline or unit.type == "rapport" or (
-            unit.type == "autobiographical" and unit.difficulty == "easy"
-        )
+        # Rapport and any autobiographical answer are baseline material: the candidate is describing
+        # their own experience, where they speak naturally and a copilot can't feed them their own
+        # history. Difficulty is irrelevant here — a detailed answer about their own work is still
+        # their normal voice, and it's often the bulk of the easy speech in a short interview.
+        return unit.is_baseline or unit.type in ("rapport", "autobiographical")
 
     def views(self) -> list[UnitView]:
         out = []
