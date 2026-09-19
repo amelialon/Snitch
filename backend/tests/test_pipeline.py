@@ -9,7 +9,7 @@ from builders import InterviewBuilder, natural, polished
 from interview_review.adapters.heuristic_analyst import HeuristicAnalyst
 from interview_review.adapters.json_transcriber import JsonTranscriber
 from interview_review.adapters.local_store import LocalStore
-from interview_review.models import Consent, Interview, Report, Segmentation
+from interview_review.models import AiTextRaw, Consent, Interview, Report, Segmentation
 from interview_review.pipeline import run_pipeline
 from interview_review.ports import Deps, FlagNarrative, load_model
 
@@ -31,8 +31,9 @@ class MarkerDetector:
 
     name = "marker"
 
-    def score(self, text: str) -> float:
-        return 0.97 if text.startswith(polished(25)) else 0.05
+    def analyze(self, text: str) -> AiTextRaw:
+        score = 0.97 if text.startswith(polished(25)) else 0.05
+        return AiTextRaw(overall_class="ai" if score >= 0.8 else "human", overall_score=score, sentences=[])
 
 
 class CountingTranscriber(JsonTranscriber):
@@ -114,7 +115,7 @@ def test_a_failing_detector_is_reported_as_skipped_not_as_a_failed_review(store)
     class BrokenDetector:
         name = "broken"
 
-        def score(self, text):
+        def analyze(self, text):
             raise RuntimeError("503 from vendor")
 
     deps = start(store, suspicious_interview(), detector=BrokenDetector())
@@ -205,3 +206,15 @@ def test_a_cv_without_an_analyzer_is_reported_as_skipped(store):
 
     reasons = [s.reason for s in report_of(store).skipped if s.signal == "cv_consistency"]
     assert reasons and "OPENAI_API_KEY" in reasons[0]
+
+
+def test_the_report_carries_the_boxed_summaries_for_the_review_page(store):
+    deps = start(store, suspicious_interview())
+
+    run_pipeline("i1", deps)
+
+    report = report_of(store)
+    assert report.ai_text_summary is not None and report.ai_text_summary.analyzed_count > 0
+    assert report.delivery_pattern.overall_class in ("normal", "medium", "abnormal")
+    assert report.cv_alignment.checked_count == 0  # no CV was provided, so nothing was checked
+    assert report.summary_note

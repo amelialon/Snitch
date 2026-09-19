@@ -16,6 +16,11 @@ from pydantic_core import to_jsonable_python
 
 from ..models import Interview
 
+# Without an explicit chunk size the library sends recordings as 100 MiB resumable chunks, one HTTP
+# write each, which times out on an ordinary uplink. Small chunks each get their own timeout and retry.
+_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024  # must be a multiple of 256 KiB
+_UPLOAD_TIMEOUT_SEC = 300
+
 
 class FirebaseStore:
     name = "firebase"
@@ -53,7 +58,9 @@ class FirebaseStore:
         self._docs.document(interview_id).delete()
 
     def put_file(self, interview_id: str, name: str, src: BinaryIO) -> None:
-        self._blob(interview_id, name).upload_from_file(src)
+        blob = self._blob(interview_id, name)
+        blob.chunk_size = _UPLOAD_CHUNK_BYTES
+        blob.upload_from_file(src, timeout=_UPLOAD_TIMEOUT_SEC)
 
     def has_file(self, interview_id: str, name: str) -> bool:
         return self._blob(interview_id, name).exists()

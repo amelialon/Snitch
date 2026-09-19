@@ -3,6 +3,9 @@
 export type Status = "processing" | "ready" | "failed";
 export type Family = "timing" | "delivery" | "content" | "visual" | "canary";
 export type Confidence = "low" | "medium" | "high";
+export type AiTextClass = "human" | "mixed" | "ai";
+export type DeliveryClass = "normal" | "medium" | "abnormal";
+export type AlignmentLevel = "high" | "medium" | "low";
 
 export interface Feedback {
   useful: boolean;
@@ -53,7 +56,42 @@ export interface CvFinding {
   claim: string;
   unit_id: string | null;
   cv_evidence: string;
-  classification: "contradiction" | "unsupported";
+  classification: "contradiction";
+  transcript_quote: string;
+  start: number | null;
+  end: number | null;
+}
+
+export interface SentenceAiScore {
+  text: string;
+  start: number;
+  end: number;
+  score: number;
+  cls: AiTextClass;
+}
+
+export interface UnitAiText {
+  unit_id: string;
+  overall_class: AiTextClass;
+  overall_score: number;
+  sentences: SentenceAiScore[];
+}
+
+export interface AiTextSummary {
+  dominant_class: AiTextClass;
+  counts: Record<string, number>;
+  analyzed_count: number;
+}
+
+export interface CvAlignment {
+  level: AlignmentLevel;
+  contradiction_count: number;
+  checked_count: number;
+}
+
+export interface DeliveryPattern {
+  overall_class: DeliveryClass;
+  description: string;
 }
 
 export interface UnitView {
@@ -72,11 +110,17 @@ export interface UnitView {
 export interface Report {
   units: UnitView[];
   candidate_speaker: string;
+  signals: Signal[];
   flags: Flag[];
   cv_findings: CvFinding[];
   skipped: { signal: string; reason: string; unit_id: string | null }[];
   adapters: Record<string, string>;
   pipeline_version: string;
+  ai_text_summary: AiTextSummary | null;
+  ai_text: UnitAiText[];
+  cv_alignment: CvAlignment | null;
+  delivery_pattern: DeliveryPattern | null;
+  summary_note: string;
 }
 
 export interface Word {

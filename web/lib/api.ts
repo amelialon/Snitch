@@ -39,8 +39,13 @@ export function createInterview(form: FormData, onProgress: (fraction: number) =
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onerror = () => reject(new Error("Could not reach the review service. Is the backend running?"));
     xhr.onload = () => {
-      const body = JSON.parse(xhr.responseText || "null");
-      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+      let body: { detail?: string } | null = null;
+      try {
+        body = JSON.parse(xhr.responseText || "null");
+      } catch {
+        // a proxy or server crash can answer with plain text; fall through to the status message
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && body) resolve(body as unknown as Interview);
       else reject(new Error(body?.detail ?? `Upload failed (${xhr.status})`));
     };
     xhr.send(form);

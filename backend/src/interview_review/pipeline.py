@@ -10,9 +10,24 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .models import ContentEvidence, CvFinding, Flag, Report, Segmentation, Skipped, Transcript, UnitView, to_turns
-from .narrative import guarded, template_narrative
-from .ports import Deps, FlagContext, load_model, save_model
+from . import align
+from .models import (
+    FILLERS,
+    ContentEvidence,
+    CvFinding,
+    Flag,
+    Report,
+    Segmentation,
+    SentenceAiScore,
+    Skipped,
+    Transcript,
+    UnitAiText,
+    UnitView,
+    normalize_word,
+    to_turns,
+)
+from .narrative import build_ai_text_summary, build_cv_alignment, build_delivery_pattern, guarded, guarded_summary, template_narrative, template_summary
+from .ports import Deps, FlagContext, ReportDigest, load_model, save_model
 from .review import resolve_units, review, strip_fillers
 
 PIPELINE_VERSION = "0.1.0"
@@ -48,16 +63,23 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
 
         stage("analyzing", 0.6)
         units = resolve_units(transcript, segmentation)
-        evidence = _gather_content_evidence(units, deps, skipped)
+        evidence = _gather_content_evidence(units, deps, skipped, transcript, segmentation.candidate_speaker)
         result = review(
             transcript, segmentation, evidence, config=deps.config, context_flags=interview.context_flags
         )
 
         stage("checking CV", 0.8)
-        cv_findings = _cv_findings(interview.files, interview_id, units, deps, skipped)
+        cv_findings, cv_checked = _cv_findings(
+            interview.files, interview_id, units, deps, skipped, transcript, segmentation.candidate_speaker
+        )
 
         stage("writing up", 0.9)
         flags = _narrate(result.flags, units, deps)
+
+        ai_text_summary = build_ai_text_summary(evidence.ai_text)
+        cv_alignment = build_cv_alignment(cv_findings, cv_checked)
+        delivery_pattern = build_delivery_pattern(result.signals)
+        summary_note = _summarize(deps, flags, ai_text_summary, cv_alignment, cv_checked, delivery_pattern)
 
         report = Report(
             units=units,
@@ -75,6 +97,11 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
                 "cv_analyzer": deps.cv_analyzer.name if deps.cv_analyzer else "none",
             },
             pipeline_version=PIPELINE_VERSION,
+            ai_text_summary=ai_text_summary,
+            ai_text=list(evidence.ai_text.values()),
+            cv_alignment=cv_alignment,
+            delivery_pattern=delivery_pattern,
+            summary_note=summary_note,
         )
         save_model(store, interview_id, "report.json", report)
         store.update_interview(
@@ -99,7 +126,9 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
             log.exception("could not record failure for %s", interview_id)
 
 
-def _gather_content_evidence(units: list[UnitView], deps: Deps, skipped: list[Skipped]) -> ContentEvidence:
+def _gather_content_evidence(
+    units: list[UnitView], deps: Deps, skipped: list[Skipped], transcript: Transcript, candidate_speaker: str
+) -> ContentEvidence:
     evidence = ContentEvidence()
 
     if deps.detector is None:
@@ -109,9 +138,14 @@ def _gather_content_evidence(units: list[UnitView], deps: Deps, skipped: list[Sk
             for unit in units:
                 if len(unit.answer.split()) >= deps.config.min_answer_words:
                     # Fillers stripped: detectors are trained on written text. See SPEC §9.
-                    evidence.ai_scores[unit.id] = deps.detector.score(strip_fillers(unit.answer))
+                    raw = deps.detector.analyze(strip_fillers(unit.answer))
+                    evidence.ai_scores[unit.id] = raw.overall_score
+                    evidence.ai_text[unit.id] = _locate_ai_sentences(
+                        unit, raw, transcript, candidate_speaker, deps.config
+                    )
         except Exception as exc:
             evidence.ai_scores.clear()  # partial coverage would bias which answers can be flagged
+            evidence.ai_text.clear()
             skipped.append(Skipped(signal="ai_text", reason=f"the AI-text detector failed: {exc}"))
 
     by_parent: dict[str, list[UnitView]] = {}
@@ -129,16 +163,47 @@ def _gather_content_evidence(units: list[UnitView], deps: Deps, skipped: list[Sk
     return evidence
 
 
+def _locate_ai_sentences(unit: UnitView, raw, transcript: Transcript, candidate_speaker: str, config) -> UnitAiText:
+    """Best-effort: walk the vendor's sentences in order against the filler-stripped word list
+    (what was actually sent to the detector) so each one can be located and colored."""
+    words = align.words_in_span(transcript.words, unit.answer_start, unit.answer_end, candidate_speaker)
+    filtered = [w for w in words if normalize_word(w.text) not in FILLERS]
+    sentences: list[SentenceAiScore] = []
+    pointer = 0
+    for s in raw.sentences:
+        span = align.locate_phrase(filtered[pointer:], s.text)
+        if span is not None:
+            start, end = span
+            sentences.append(SentenceAiScore(text=s.text, start=start, end=end, score=s.score, cls=_bucket(s.score, config)))
+        pointer = min(pointer + max(1, len(s.text.split())), len(filtered))
+    return UnitAiText(unit_id=unit.id, overall_class=raw.overall_class, overall_score=raw.overall_score, sentences=sentences)
+
+
+def _bucket(score: float, config) -> str:
+    if score >= config.ai_score_min:
+        return "ai"
+    if score >= config.ai_score_mixed:
+        return "mixed"
+    return "human"
+
+
 def _cv_findings(
-    files: dict[str, str], interview_id: str, units: list[UnitView], deps: Deps, skipped: list[Skipped]
-) -> list[CvFinding]:
+    files: dict[str, str],
+    interview_id: str,
+    units: list[UnitView],
+    deps: Deps,
+    skipped: list[Skipped],
+    transcript: Transcript,
+    candidate_speaker: str,
+) -> tuple[list[CvFinding], int]:
+    checkable = [u for u in units if not u.is_baseline]
     names = [files[role] for role in ("cv", "cover_letter") if role in files]
     if not names:
         skipped.append(Skipped(signal="cv_consistency", reason="no CV or cover letter was provided"))
-        return []
+        return [], 0
     if deps.cv_analyzer is None:
         skipped.append(Skipped(signal="cv_consistency", reason="no CV analyzer is configured (set OPENAI_API_KEY)"))
-        return []
+        return [], 0
     try:
         texts = []
         for name in names:
@@ -147,10 +212,44 @@ def _cv_findings(
         cv_text = "\n\n".join(texts)
         if len(cv_text) > _MAX_CV_CHARS:
             raise ValueError(f"the CV is unusually long ({len(cv_text)} characters); not analyzed rather than truncated")
-        return deps.cv_analyzer.find_inconsistencies(cv_text, [u for u in units if not u.is_baseline])
+        findings = deps.cv_analyzer.find_inconsistencies(cv_text, checkable)
+        views = {u.id: u for u in units}
+        located = [_locate_cv_quote(f, views, transcript, candidate_speaker) for f in findings]
+        return located, len(checkable)
     except Exception as exc:
         skipped.append(Skipped(signal="cv_consistency", reason=str(exc)))
-        return []
+        return [], 0
+
+
+def _locate_cv_quote(finding: CvFinding, views: dict[str, UnitView], transcript: Transcript, candidate_speaker: str) -> CvFinding:
+    unit = views.get(finding.unit_id) if finding.unit_id else None
+    if unit is None or not finding.transcript_quote:
+        return finding
+    words = align.words_in_span(transcript.words, unit.answer_start, unit.answer_end, candidate_speaker)
+    span = align.locate_phrase(words, finding.transcript_quote)
+    if span is None:
+        return finding
+    start, end = span
+    return finding.model_copy(update={"start": start, "end": end})
+
+
+def _summarize(deps: Deps, flags, ai_text_summary, cv_alignment, cv_checked: int, delivery_pattern) -> str:
+    digest = ReportDigest(
+        flag_count=len(flags),
+        families=sorted({f for flag in flags for f in flag.families}),
+        ai_class=ai_text_summary.dominant_class if ai_text_summary else None,
+        ai_counts=ai_text_summary.counts if ai_text_summary else {},
+        cv_level=cv_alignment.level if cv_checked else None,
+        cv_contradictions=cv_alignment.contradiction_count,
+        delivery_class=delivery_pattern.overall_class,
+        delivery_note=delivery_pattern.description,
+    )
+    try:
+        text = deps.analyst.summarize(digest)
+    except Exception:
+        log.exception("summary failed; using the template")
+        text = template_summary(digest)
+    return guarded_summary(text, digest)
 
 
 def _document_text(path: Path) -> str:

@@ -109,8 +109,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             files=names,
         )
         store.create_interview(interview)
-        for role, (upload, _) in uploads.items():
-            store.put_file(interview.id, names[role], upload.file)
+        try:
+            for role, (upload, _) in uploads.items():
+                store.put_file(interview.id, names[role], upload.file)
+        except Exception as exc:
+            store.delete_interview(interview.id)  # no half-created record left in the list
+            raise HTTPException(502, f"Could not store the upload, please try again ({type(exc).__name__}).") from exc
 
         background.add_task(run_pipeline, interview.id, deps)
         return interview

@@ -15,6 +15,9 @@ Difficulty = Literal["easy", "medium", "hard"]
 Family = Literal["timing", "delivery", "content", "visual", "canary"]
 Confidence = Literal["low", "medium", "high"]
 Status = Literal["processing", "ready", "failed"]
+AiTextClass = Literal["human", "mixed", "ai"]
+DeliveryClass = Literal["normal", "medium", "abnormal"]
+AlignmentScore = Literal["high", "medium", "low"]
 
 FILLERS = frozenset({"um", "uh", "er", "erm", "ah", "hmm", "mm", "mhm", "uhm", "umm", "uhh"})
 _WORD_CHARS = re.compile(r"[^a-z']")
@@ -106,10 +109,63 @@ class DepthJudgment(BaseModel):
     rationale: str
 
 
+class RawAiSentence(BaseModel):
+    """One sentence as GPTZero split it, before alignment back to the transcript."""
+
+    text: str
+    score: float
+
+
+class AiTextRaw(BaseModel):
+    """What an AiTextDetector returns for one answer: the vendor's own classification plus
+    sentence-level scores, unaligned to the transcript (the detector never sees word timing)."""
+
+    overall_class: AiTextClass
+    overall_score: float
+    sentences: list[RawAiSentence] = Field(default_factory=list)
+
+
+class SentenceAiScore(BaseModel):
+    """One GPTZero sentence, located back in the transcript and bucketed for highlighting."""
+
+    text: str
+    start: float
+    end: float
+    score: float
+    cls: AiTextClass
+
+
+class UnitAiText(BaseModel):
+    unit_id: str
+    overall_class: AiTextClass
+    overall_score: float
+    sentences: list[SentenceAiScore] = Field(default_factory=list)
+
+
+class AiTextSummary(BaseModel):
+    """One-line-box view across every answer GPTZero scored."""
+
+    dominant_class: AiTextClass
+    counts: dict[str, int]  # "human" | "mixed" | "ai" -> count
+    analyzed_count: int
+
+
+class CvAlignment(BaseModel):
+    level: AlignmentScore
+    contradiction_count: int
+    checked_count: int
+
+
+class DeliveryPattern(BaseModel):
+    overall_class: DeliveryClass
+    description: str
+
+
 class ContentEvidence(BaseModel):
     """Evidence gathered from vendors before the pure review. A missing key means not evaluated."""
 
     ai_scores: dict[str, float] = Field(default_factory=dict)  # unit id -> 0..1
+    ai_text: dict[str, UnitAiText] = Field(default_factory=dict)  # unit id -> timestamped detail
     depth: dict[str, DepthJudgment] = Field(default_factory=dict)  # parent unit id -> judgment
 
 
@@ -163,10 +219,16 @@ class Flag(BaseModel):
 
 
 class CvFinding(BaseModel):
+    """A spoken claim that contradicts the CV. Deliberately contradictions only — see context.md:
+    an absent CV mention is not evidence of anything and must never be flagged."""
+
     claim: str
     unit_id: str | None = None
     cv_evidence: str
-    classification: Literal["contradiction", "unsupported"]
+    classification: Literal["contradiction"] = "contradiction"
+    transcript_quote: str = ""  # verbatim phrase from the answer; located in the transcript by pipeline.py
+    start: float | None = None
+    end: float | None = None
 
 
 class UnitView(BaseModel):
@@ -194,6 +256,12 @@ class Report(BaseModel):
     skipped: list[Skipped]
     adapters: dict[str, str]
     pipeline_version: str
+    ai_text_summary: AiTextSummary | None = None
+    ai_text: list[UnitAiText] = Field(default_factory=list)
+    # Optional: reports written before these existed must still load (reports are immutable).
+    cv_alignment: CvAlignment | None = None
+    delivery_pattern: DeliveryPattern | None = None
+    summary_note: str = ""
 
 
 # --- interview record -----------------------------------------------------------

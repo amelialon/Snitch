@@ -11,6 +11,8 @@ from typing import Any, BinaryIO, Protocol, TypeVar
 from pydantic import BaseModel
 
 from .models import (
+    AiTextClass,
+    AiTextRaw,
     CvFinding,
     DepthJudgment,
     Flag,
@@ -65,12 +67,27 @@ class FlagNarrative(BaseModel):
     verification_prompt: str
 
 
+class ReportDigest(BaseModel):
+    """Computed, structured facts about one report - never raw text - handed to `Analyst.summarize`
+    so the write-up can't smuggle in anything the deterministic builders didn't already decide."""
+
+    flag_count: int
+    families: list[str]
+    ai_class: AiTextClass | None
+    ai_counts: dict[str, int]
+    cv_level: str | None
+    cv_contradictions: int
+    delivery_class: str
+    delivery_note: str
+
+
 class Analyst(Protocol):
     name: str
 
     def segment(self, turns: list[Turn]) -> Segmentation: ...
     def judge_depth(self, parent: UnitView, follow_ups: list[UnitView]) -> DepthJudgment: ...
     def explain_flags(self, contexts: list[FlagContext]) -> list[FlagNarrative]: ...
+    def summarize(self, digest: ReportDigest) -> str: ...
 
 
 class CvAnalyzer(Protocol):
@@ -84,8 +101,8 @@ class CvAnalyzer(Protocol):
 class AiTextDetector(Protocol):
     name: str
 
-    def score(self, text: str) -> float:
-        """Probability in 0..1 that the text was AI-generated."""
+    def analyze(self, text: str) -> AiTextRaw:
+        """The vendor's classification of this text, plus its own sentence-level scores."""
         ...
 
 

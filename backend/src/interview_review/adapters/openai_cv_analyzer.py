@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -13,22 +11,27 @@ _INSTRUCTIONS = (
     "You are part of an interview review tool used by recruiters. Compare factual claims the candidate "
     "made in the interview against their CV and cover letter: employers, dates, titles, team sizes, "
     "technologies, scope, numbers.\n"
-    "Report only:\n"
-    "- contradiction: the spoken claim conflicts with the CV (different dates, title, employer, numbers).\n"
-    "- unsupported: a significant claim (a role, a major project, a headline technology) that the CV would "
-    "be expected to mention and does not.\n"
-    "Do not report consistent claims, rounding differences, or minor omissions; CVs are summaries. "
-    "cv_evidence quotes or describes what the CV says, or states that it is silent. unit_id is the id in "
-    "square brackets of the answer where the claim was made. Describe facts only: never suggest "
-    "dishonesty or intent, and never recommend a hiring outcome. An empty list is a normal result."
+    "Report ONLY contradictions: the spoken claim directly conflicts with something the CV states "
+    "(a different date, title, employer, team size, or number). If the CV is simply silent on a topic, "
+    "or only loosely related, that is NOT a contradiction — do not report it. When you are not sure "
+    "there is enough evidence to prove a conflict, do not report it either; an empty list is a normal "
+    "and common result.\n"
+    "For each contradiction:\n"
+    "- claim: the fact as the candidate stated it, in your own words.\n"
+    "- transcript_quote: copy a short phrase VERBATIM from the given answer text (a few consecutive "
+    "words, exactly as written, not paraphrased) that contains the conflicting fact. This is used to "
+    "locate and highlight it, so it must be an exact substring of the answer.\n"
+    "- cv_evidence: what the CV actually says, quoted or closely paraphrased.\n"
+    "- unit_id: the id in square brackets of the answer where the claim was made.\n"
+    "Describe facts only: never suggest dishonesty or intent, and never recommend a hiring outcome."
 )
 
 
 class _Finding(BaseModel):
     claim: str
     unit_id: str | None
+    transcript_quote: str
     cv_evidence: str
-    classification: Literal["contradiction", "unsupported"]
 
 
 class _Findings(BaseModel):
@@ -61,7 +64,7 @@ class OpenAICvAnalyzer:
                 claim=f.claim,
                 unit_id=f.unit_id if f.unit_id in known else None,
                 cv_evidence=f.cv_evidence,
-                classification=f.classification,
+                transcript_quote=f.transcript_quote,
             )
             for f in parsed.findings
         ]
