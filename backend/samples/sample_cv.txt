@@ -1,0 +1,11 @@
+JORDAN EXAMPLE (fictional)
+Backend Engineer
+
+EXPERIENCE
+Northway Logistics — Backend Engineer, 2023–present (team of 5)
+  Route-planning service. Python, PostgreSQL. Owner of the public routing API.
+Brightcart — Junior Developer, 2021–2023
+  Internal tools in Python and Django.
+
+SKILLS
+Python, PostgreSQL, Django, Docker, Redis

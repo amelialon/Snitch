@@ -1,0 +1,9 @@
+rules_version = '2';
+// Demo posture: deny ALL client access; the backend serves and stores files via the Admin SDK.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

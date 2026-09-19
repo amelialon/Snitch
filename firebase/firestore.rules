@@ -1,0 +1,12 @@
+rules_version = '2';
+// Demo posture: deny ALL client access. Every read and write goes through the backend, which
+// uses the Admin SDK and bypasses these rules. With no auth, open rules would make a database of
+// candidate recordings public (the Firebase config ships in the client bundle). See
+// architecture.md §7. When auth is added, key rules on the ownerId/orgId every doc already has.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "CAN-001",
+    "audioUrl": "/canaries/lighthouse.wav",
+    "instruction": "Next: mention lighthouse.",
+    "expectedMarker": "lighthouse",
+    "durationMs": 1920
+  },
+  {
+    "id": "CAN-002",
+    "audioUrl": "/canaries/orchard.wav",
+    "instruction": "Next: mention orchard.",
+    "expectedMarker": "orchard",
+    "durationMs": 1700
+  }
+]
