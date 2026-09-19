@@ -22,18 +22,31 @@ interface Props {
   highlight?: HighlightSpan[];
 }
 
-/** The interview, exchange by exchange. Follows playback; flagged exchanges are marked. */
-export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek, highlight }: Props) {
-  const highlightAt = (start: number) => (highlight ?? []).find((h) => start >= h.start - 0.02 && start < h.end + 0.02);
+/** Consecutive words by one speaker, so each turn can be shown on its own labeled row. */
+function speakerRuns(ws: Word[]): { speaker: string; words: Word[] }[] {
+  const runs: { speaker: string; words: Word[] }[] = [];
+  for (const w of ws) {
+    const last = runs[runs.length - 1];
+    if (last && last.speaker === w.speaker) last.words.push(w);
+    else runs.push({ speaker: w.speaker, words: [w] });
+  }
+  return runs;
+}
+
+/** The interview, exchange by exchange, with interviewer and candidate turns separated. */
+export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek }: Props) {
   const flagged = useMemo(() => {
     const ids = new Set(flags.map((f) => f.unit_id));
     return new Set(units.filter((u) => ids.has(u.id) || (u.parent_id && ids.has(u.parent_id))).map((u) => u.id));
   }, [flags, units]);
 
-  const wordsByUnit = useMemo(
+  const runsByUnit = useMemo(
     () =>
       new Map(
-        units.map((u) => [u.id, words.filter((w) => w.start >= u.question_start - 0.01 && w.end <= u.answer_end + 0.01)]),
+        units.map((u) => [
+          u.id,
+          speakerRuns(words.filter((w) => w.start >= u.question_start - 0.01 && w.end <= u.answer_end + 0.01)),
+        ]),
       ),
     [units, words],
   );
@@ -52,38 +65,44 @@ export function TranscriptPane({ units, words, flags, candidate, current, canSee
           <li
             key={unit.id}
             ref={isActive ? activeRef : null}
-            className={`rounded-md border p-3 text-sm ${flagged.has(unit.id) ? "border-mark-strong bg-mark/40" : "border-transparent"} ${isActive ? "ring-1 ring-accent" : ""} ${unit.parent_id ? "ml-5" : ""}`}
+            className={`rounded-md border p-3 text-sm ${flagged.has(unit.id) ? "border-mark-strong bg-mark/40" : "border-border/60"} ${isActive ? "ring-1 ring-accent" : ""} ${unit.parent_id ? "ml-5" : ""}`}
           >
-            <div className="mb-1 flex items-center gap-2 font-mono text-xs text-muted">
+            <div className="mb-2 flex items-center gap-2 font-mono text-xs text-muted">
               <button type="button" disabled={!canSeek} onClick={() => onSeek(unit.question_start)} className="enabled:hover:text-accent">
                 {clock(unit.question_start)}
               </button>
               <span>{unit.is_baseline ? "baseline" : unit.type.replace("_", " ")}</span>
               {unit.parent_id && <span>follow-up</span>}
             </div>
-            <p className="leading-relaxed">
-              {(wordsByUnit.get(unit.id) ?? []).map((word, i) => {
-                const spoken = isActive && current >= word.start && current < word.end + 0.15;
-                const hit = highlight ? highlightAt(word.start) : undefined;
-                const highlightClass = hit
-                  ? hit.cls === "ai"
-                    ? "rounded-sm bg-hl-ai px-0.5 text-hl-ai-text"
-                    : "rounded-sm bg-hl-warn px-0.5 text-hl-warn-text"
-                  : spoken
-                    ? "rounded-sm bg-accent text-accent-fg"
-                    : "";
+
+            <div className="space-y-2">
+              {(runsByUnit.get(unit.id) ?? []).map((run) => {
+                const isCandidate = run.speaker === candidate;
                 return (
-                  <span
-                    key={i}
-                    onClick={canSeek ? () => onSeek(word.start) : undefined}
-                    title={hit?.title}
-                    className={`${word.speaker === candidate ? "" : "font-medium text-muted"} ${canSeek ? "cursor-pointer hover:underline" : ""} ${highlightClass}`}
-                  >
-                    {word.text}{" "}
-                  </span>
+                  <div key={run.words[0].start} className="flex gap-3">
+                    <span
+                      className={`w-20 shrink-0 select-none pt-0.5 text-xs font-semibold uppercase tracking-wide ${isCandidate ? "text-accent" : "text-muted"}`}
+                    >
+                      {isCandidate ? "Candidate" : "Interviewer"}
+                    </span>
+                    <p className={`flex-1 leading-relaxed ${isCandidate ? "" : "text-muted"}`}>
+                      {run.words.map((word) => {
+                        const spoken = isActive && current >= word.start && current < word.end + 0.15;
+                        return (
+                          <span
+                            key={word.start}
+                            onClick={canSeek ? () => onSeek(word.start) : undefined}
+                            className={`${canSeek ? "cursor-pointer hover:underline" : ""} ${spoken ? "rounded-sm bg-accent text-accent-fg" : ""}`}
+                          >
+                            {word.text}{" "}
+                          </span>
+                        );
+                      })}
+                    </p>
+                  </div>
                 );
               })}
-            </p>
+            </div>
           </li>
         );
       })}
