@@ -45,8 +45,9 @@ Upload a recording (or a transcript `.json`) plus an optional CV, and review the
 Open **Live interviews**, create an interview, and copy its invitation link for the candidate.
 Both participants join inside this app; no Daily/Zoom account or external room URL is required.
 The interviewer starts a recorded interview after confirming consent. Both cameras, both
-microphones, and any shared screen are captured. Screen/system audio is excluded. Canary audio,
-watermarks, and calibration controls have been removed from the live interface.
+microphones, and any shared screen are captured. Screen/system audio and audio canaries are excluded.
+Shared screens include an adaptive visual watermark, composited before transmission and recording.
+Adjust its visibility before starting screen sharing; each sharing session gets a fresh saved identifier.
 
 Choose **End interview & create review** to finalize the video, upload it, and open its review
 while transcription/analysis runs. If a candidate leaves, the interviewer also finalizes and
