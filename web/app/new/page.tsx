@@ -5,14 +5,27 @@ import { useState } from "react";
 import { createInterview } from "@/lib/api";
 
 const CONTEXT_FLAGS = [
-  ["notes_permitted", "Notes were permitted", "Reading-style delivery will not be counted as evidence."],
-  ["open_book", "Open-book interview", "Looking things up was allowed."],
+  ["notes_permitted", "Notes were permitted", "Reading-style delivery is not counted."],
+  ["open_book", "Open-book interview", ""],
   ["take_home_discussed", "A take-home was discussed", "Prepared, polished answers are expected."],
   ["interpreter_present", "An interpreter or third person was present", ""],
 ] as const;
 
 const CONSENT_TEXT =
-  "I confirm the candidate was told this interview would be recorded and analyzed by automated tools, and agreed to both.";
+  "The candidate was told this interview would be recorded and analysed by automated tools, and agreed to both.";
+
+/** A form row: heading and reason on the left, the fields on the right. */
+function Section({ title, why, accent, children }: { title: string; why?: string; accent?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={`grid grid-cols-[220px_minmax(0,1fr)] gap-8 border-t py-7 ${accent ? "border-accent" : "border-border"}`}>
+      <div>
+        <h2 className="text-[15px] font-semibold leading-snug">{title}</h2>
+        {why && <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">{why}</p>}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
 
 export default function NewReview() {
   const router = useRouter();
@@ -48,88 +61,83 @@ export default function NewReview() {
   // The progress bar measures browser → API only. At 100% the API is still copying the recording
   // into storage, which can take minutes on a slow network, so say that instead of a stuck "100%".
   const storing = progress !== null && progress >= 1;
-  const field = "mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm";
+  const field =
+    "h-10 w-full rounded-lg border border-border bg-surface px-3 text-[14.5px] outline-none placeholder:text-muted focus:border-accent focus:ring-[3px] focus:ring-mark";
   const file =
-    "mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-text";
+    "block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-text";
+  const check = "flex items-start gap-3 text-[14.5px] leading-snug";
+  const box = "mt-1 size-4 shrink-0 accent-(--accent)";
 
   return (
-    <form onSubmit={submit} className="mx-auto max-w-2xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">New review</h1>
-        <p className="mt-1 text-sm text-muted">
-          Upload a recorded interview. You will get back a few moments worth a second look, with the evidence for each.
+    <form onSubmit={submit} className="max-w-[860px]">
+      <header className="max-w-[760px] space-y-2.5 pb-7">
+        <h1 className="text-[38px] leading-none">New review</h1>
+        <p className="text-[15px] leading-relaxed text-muted">
+          Upload a recorded interview. You get back a few moments worth a second look, with the evidence for each, and you make the call.
         </p>
-      </div>
+      </header>
 
-      <section className="space-y-4">
-        <label className="block text-sm font-medium">
-          Candidate
-          <input name="candidate_label" required placeholder="Name or reference" className={field} />
-        </label>
-        <label className="block text-sm font-medium">
-          Recording
-          <input name="recording" type="file" required accept=".mp4,.webm,.mov,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.json" className={file} />
-          <span className="mt-1 block text-xs font-normal text-muted">
-            Video or audio. Without a speech-to-text key configured, upload a transcript .json instead.
-          </span>
-        </label>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-medium">
-            CV <span className="font-normal text-muted">(optional)</span>
-            <input name="cv" type="file" accept=".pdf,.txt,.md" className={file} />
+      <Section title="Candidate">
+        <input name="candidate_label" required placeholder="Name or reference" aria-label="Candidate" className={`${field} max-w-[420px]`} />
+      </Section>
+
+      <Section title="Recording" why="Video or audio, up to 2 GB. Without a speech-to-text key configured, upload a transcript .json instead.">
+        <input name="recording" type="file" required accept=".mp4,.webm,.mov,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.json" className={file} />
+      </Section>
+
+      <Section title="Documents" why="Optional. Used only to compare spoken claims with what the CV says.">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-[13px] font-medium">
+            CV
+            <input name="cv" type="file" accept=".pdf,.txt,.md" className={`${file} mt-1.5`} />
           </label>
-          <label className="block text-sm font-medium">
-            Cover letter <span className="font-normal text-muted">(optional)</span>
-            <input name="cover_letter" type="file" accept=".pdf,.txt,.md" className={file} />
+          <label className="block text-[13px] font-medium">
+            Cover letter
+            <input name="cover_letter" type="file" accept=".pdf,.txt,.md" className={`${file} mt-1.5`} />
           </label>
         </div>
-      </section>
+      </Section>
 
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">Interview conditions</legend>
-        <p className="text-xs text-muted">These change what counts as evidence, so honest candidates are not penalized for allowed behaviour.</p>
-        {CONTEXT_FLAGS.map(([key, label, hint]) => (
-          <label key={key} className="flex items-start gap-3 text-sm">
-            <input type="checkbox" name={key} className="mt-0.5 size-4 accent-(--accent)" />
-            <span>
-              {label}
-              {hint && <span className="block text-xs text-muted">{hint}</span>}
-            </span>
+      <Section title="Conditions" why="These change what counts as evidence, so nobody is penalised for allowed behaviour.">
+        <div className="space-y-3.5">
+          {CONTEXT_FLAGS.map(([key, label, hint]) => (
+            <label key={key} className={check}>
+              <input type="checkbox" name={key} className={box} />
+              <span>
+                {label}
+                {hint && <span className="block text-[13px] text-muted">{hint}</span>}
+              </span>
+            </label>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Consent" why="Required before anything is uploaded." accent>
+        <div className="space-y-4">
+          <label className={check}>
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className={box} />
+            <span>{CONSENT_TEXT}</span>
           </label>
-        ))}
-      </fieldset>
+          <label className="block max-w-[420px] text-[13px] font-medium">
+            Attested by
+            <input name="attested_by" required placeholder="Your name or email" className={`${field} mt-1.5 font-normal`} />
+          </label>
+        </div>
+      </Section>
 
-      <section className="space-y-3 rounded-lg border border-border bg-surface p-4">
-        <h2 className="text-sm font-medium">Consent</h2>
-        <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => setConsent(e.target.checked)}
-            className="mt-0.5 size-4 accent-(--accent)"
-          />
-          <span>{CONSENT_TEXT}</span>
-        </label>
-        <label className="block text-sm font-medium">
-          Your name or email
-          <input name="attested_by" required placeholder="Recorded with the attestation" className={field} />
-        </label>
-      </section>
+      {error && <p className="pb-4 text-sm text-danger">{error}</p>}
 
-      {error && <p className="text-sm text-danger">{error}</p>}
-
-      <div className="flex items-center gap-4">
-        <button
-          type="submit"
-          disabled={!consent || busy}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
+      <div className="flex items-center gap-5 border-t border-border pt-7">
+        <button type="submit" disabled={!consent || busy} className="btn btn-primary">
           {storing ? "Storing recording…" : busy ? `Uploading… ${Math.round((progress ?? 0) * 100)}%` : "Upload and review"}
         </button>
-        {!consent && <span className="text-xs text-muted">Consent is required before anything is uploaded.</span>}
-        {storing && (
-          <span className="text-xs text-muted">Received. Saving the recording to storage can take a few minutes on a slow connection — keep this tab open.</span>
-        )}
+        <span className="text-[13.5px] text-muted">
+          {storing
+            ? "Received. Saving the recording to storage can take a few minutes on a slow connection. Keep this tab open."
+            : !consent
+              ? "Consent is required before anything is uploaded."
+              : "Takes about as long as the recording. Files stay in your workspace and can be deleted at any time."}
+        </span>
       </div>
     </form>
   );

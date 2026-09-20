@@ -1,40 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
+import { DM_Mono, Outfit, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import { Nav } from "@/components/nav";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin"], weight: ["400", "500", "600"] });
+const outfit = Outfit({ variable: "--font-outfit", subsets: ["latin"], weight: ["500", "600"] });
+const dmMono = DM_Mono({ variable: "--font-dm-mono", subsets: ["latin"], weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "Interview Review",
+  title: "Snitch",
   description: "Moments in a recorded interview worth a second look, with the evidence.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-sans">
-        <header className="border-b border-border bg-surface">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-            <Link href="/" className="text-sm font-semibold tracking-tight">
-              Interview Review
-            </Link>
-            <nav aria-label="Main navigation" className="flex items-center gap-4">
-            <Link href="/live" className="text-sm font-medium hover:underline">Live interviews</Link>
-            <Link
-              href="/new"
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90"
-            >
-              New review
-            </Link>
-            </nav>
-          </div>
-        </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
-        <footer className="mx-auto w-full max-w-6xl px-4 pb-8 text-xs text-muted sm:px-6">
-          This tool points to moments worth a second look. It does not decide anything; you do.
-        </footer>
+    <html lang="en" className={`${jakarta.variable} ${outfit.variable} ${dmMono.variable} h-full antialiased`}>
+      <body className="flex min-h-full font-sans">
+        <Nav />
+        <main className="min-w-0 flex-1 px-14 py-10">{children}</main>
       </body>
     </html>
   );

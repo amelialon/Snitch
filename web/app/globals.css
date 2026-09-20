@@ -1,44 +1,48 @@
 @import "tailwindcss";
 
+/* Palette taken from the Snitch logo: deep indigo wordmark, lighter lavender mark. Warm off-white ground. */
 :root {
-  --bg: #f6f5f1;
+  --bg: #f7f6f2;
   --surface: #ffffff;
-  --border: #e3e0d8;
-  --text: #1c1b18;
-  --muted: #6b675e;
-  --accent: #1f4f46;
+  --border: #e6e3db;
+  --text: #1f1e1b;
+  --muted: #6f6d66;
+  --accent: #3d30b3;
+  --accent-hover: #2e2490;
   --accent-fg: #ffffff;
-  --mark: #fbf0cf;
-  --mark-strong: #f2d477;
-  --mark-text: #6b4e00;
+  --mark: #f3f1fd;
+  --mark-strong: #7b61f6;
+  --mark-text: #3d30b3;
   --danger: #a3341f;
-  --flag-ai: #f6d9d1;
-  --flag-ai-text: #7a2c1d;
-  --hl-warn: #ffd60a;
-  --hl-warn-text: #1c1b18;
-  --hl-ai: #d92d20;
-  --hl-ai-text: #ffffff;
+  --flag-ai: #e3ddfb;
+  --flag-ai-text: #2e2490;
+  /* transcript highlights: deep lavender reads as generated, light as mixed / other evidence */
+  --hl-warn: #f1eefc;
+  --hl-warn-text: #1f1e1b;
+  --hl-ai: #e3ddfb;
+  --hl-ai-text: #1f1e1b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121311;
-    --surface: #1a1c19;
-    --border: #2d302b;
+    --bg: #121216;
+    --surface: #1a1a20;
+    --border: #2c2c34;
     --text: #ecebe6;
     --muted: #9b998f;
-    --accent: #7fc8b8;
-    --accent-fg: #0d1f1b;
-    --mark: #3a3114;
-    --mark-strong: #7a6420;
-    --mark-text: #f3dc8d;
+    --accent: #a99cf5;
+    --accent-hover: #c2b8ff;
+    --accent-fg: #14122b;
+    --mark: #24213a;
+    --mark-strong: #7b61f6;
+    --mark-text: #c9c0fb;
     --danger: #f08b76;
-    --flag-ai: #4a2318;
-    --flag-ai-text: #f3b4a3;
-    --hl-warn: #f2c200;
-    --hl-warn-text: #121311;
-    --hl-ai: #ff5a4d;
-    --hl-ai-text: #121311;
+    --flag-ai: #2e2a4d;
+    --flag-ai-text: #c9c0fb;
+    --hl-warn: #24213a;
+    --hl-warn-text: #ecebe6;
+    --hl-ai: #3a3468;
+    --hl-ai-text: #ecebe6;
   }
 }
 
@@ -49,6 +53,7 @@
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
   --color-mark: var(--mark);
   --color-mark-strong: var(--mark-strong);
@@ -60,16 +65,69 @@
   --color-hl-warn-text: var(--hl-warn-text);
   --color-hl-ai: var(--hl-ai);
   --color-hl-ai-text: var(--hl-ai-text);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-dm-mono);
+  --font-display: var(--font-outfit);
 }
 
 body {
   background: var(--bg);
   color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+h1 {
+  font-family: var(--font-outfit);
+  font-weight: 600;
+  letter-spacing: -0.03em;
 }
 
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Shared control styles, so every page presses and hovers the same way. */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.375rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 120ms ease;
+}
+@utility btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+@utility btn-ghost {
+  background: var(--surface);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--muted));
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--surface) 70%, var(--border));
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@utility eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }

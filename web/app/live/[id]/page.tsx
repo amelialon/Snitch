@@ -45,6 +45,7 @@ function LiveRoom() {
   const [markerText, setMarkerText] = useState("");
   const [opacity, setOpacity] = useState(.35);
 
+  const stage = useRef<HTMLDivElement | null>(null);
   const ending = useRef(false);
   const mounted = useRef(true);
   const busy = useRef(false);
@@ -434,23 +435,22 @@ function LiveRoom() {
     }
   }
 
-  const button =
-    "rounded-md border border-border px-4 py-2 text-sm font-medium disabled:opacity-40";
+  const button = "btn btn-ghost";
 
   return (
     <div className="space-y-5">
       {phase !== "live" &&
         phase !== "joining" &&
         phase !== "saving" && (
-          <Link href="/live" className="text-sm text-accent">
-            ← Live interviews
+          <Link href="/live" className="text-[13px] text-muted hover:text-text">
+            Live interviews
           </Link>
         )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Live interview</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-5">
+        <h1 className="text-4xl leading-none">Live interview</h1>
 
-        <span role="status" className="text-sm text-muted">
+        <span role="status" className="text-[13.5px] text-muted">
           {phase === "live"
             ? `${
                 role === "host" ? "● Recording · " : ""
@@ -470,7 +470,7 @@ function LiveRoom() {
       {error && (
         <p
           role="alert"
-          className="rounded border border-danger/40 p-3 text-sm text-danger"
+          className="text-sm text-danger"
         >
           {error}
         </p>
@@ -483,9 +483,9 @@ function LiveRoom() {
       )}
 
       {role === "host" && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4">
-          <p className="flex-1 text-sm">
-            Invite the candidate to this room. Both of you stay inside
+        <div className="flex flex-wrap items-center gap-4">
+          <p className="flex-1 text-[13.5px] leading-relaxed text-muted">
+            Invite the candidate to this room. They open the link in a browser, confirm consent, and join. Both of you stay inside
             this app.
           </p>
 
@@ -511,18 +511,19 @@ function LiveRoom() {
       )}
 
       {(phase === "idle" || phase === "ended") && (
-        <section className="space-y-4 rounded-lg border border-border bg-surface p-5">
-          <p className="text-sm">
+        <section className="max-w-[720px] space-y-4 border-t border-border pt-6">
+          <p className="text-[14.5px] leading-relaxed">
             Your camera, microphone, and any shared screen will be
             recorded for automated interview review.
             Shared screens include a subtle visual watermark.
           </p>
 
-          <label className="flex gap-2 text-sm">
+          <label className="flex items-start gap-3 text-[14.5px] leading-snug">
             <input
               type="checkbox"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
+              className="mt-1 size-4 shrink-0 accent-(--accent)"
             />
 
             {role === "host"
@@ -533,7 +534,7 @@ function LiveRoom() {
           <button
             disabled={!consent || !loaded || phase === "ended"}
             onClick={join}
-            className={`${button} bg-accent text-accent-fg`}
+            className="btn btn-primary"
           >
             {role === "host"
               ? "Start recorded interview"
@@ -549,8 +550,21 @@ function LiveRoom() {
       )}
 
       {(phase === "live" || phase === "joining") && (
-        <>
-          <div className="grid gap-4 md:grid-cols-2">
+        <div ref={stage} className="space-y-3 bg-bg">
+          {(sharing || remote.screen) && (
+            <VideoTile
+              videoTrack={sharing ?? remote.screen}
+              label={
+                sharing
+                  ? "Your shared screen"
+                  : "Shared screen"
+              }
+              muted
+              contain
+            />
+          )}
+
+          <div className="grid gap-3 md:grid-cols-2">
             <VideoTile
               videoTrack={cameraOn ? local : null}
               label={
@@ -572,21 +586,8 @@ function LiveRoom() {
             />
           </div>
 
-          {(sharing || remote.screen) && (
-            <VideoTile
-              videoTrack={sharing ?? remote.screen}
-              label={
-                sharing
-                  ? "Your shared screen"
-                  : "Shared screen"
-              }
-              muted
-              contain
-            />
-          )}
-
           {phase === "live" && (
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-[13.5px] text-muted">
               <label className="flex items-center gap-3">
                 Visual watermark visibility: {Math.round(opacity * 100)}%
                 <input aria-label="Visual watermark visibility" type="range" min="0.1" max="0.8" step="0.05" value={opacity} disabled={sharePending || !!sharing} onChange={e => setOpacity(Number(e.target.value))} />
@@ -596,7 +597,7 @@ function LiveRoom() {
           )}
 
           {phase === "live" && (
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-2 pt-2">
               <button
                 className={button}
                 onClick={() => {
@@ -648,21 +649,35 @@ function LiveRoom() {
               </button>
 
               <button
-                className={`${button} bg-accent text-accent-fg`}
+                className={button}
+                onClick={() => {
+                  const el = stage.current;
+                  if (!el) return;
+                  if (document.fullscreenElement === el) document.exitFullscreen().catch(() => {});
+                  else el.requestFullscreen().catch(() => {});
+                }}
+              >
+                Full screen
+              </button>
+
+              <div className="flex-1" />
+
+              <button
+                className="btn btn-primary"
                 onClick={() => finish()}
               >
                 {role === "host"
-                  ? "End interview & create review"
+                  ? "End interview"
                   : "Leave interview"}
               </button>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {saved && (
-        <section className="space-y-3 rounded-lg border border-border bg-surface p-4">
-          <h2 className="font-semibold">
+        <section className="max-w-[720px] space-y-3 border-t border-border pt-6">
+          <h2 className="text-[15px] font-semibold">
             Your recording
           </h2>
 
@@ -744,12 +759,12 @@ function RecordingPreview({
       <video
         ref={video}
         controls
-        className="max-h-80 w-full rounded bg-black"
+        className="max-h-80 w-full rounded-[10px] bg-black"
       />
 
       <a
         ref={link}
-        className="inline-block text-sm underline"
+        className="inline-block text-sm text-accent hover:underline"
         download={`interview-${id}.${
           blob.type.includes("mp4")
             ? "mp4"

@@ -17,7 +17,7 @@ export function Timeline({ duration, current, flags, selected, onSeek, onSelect 
   return (
     <div>
       <div
-        className="relative h-8 cursor-pointer rounded-md border border-border bg-surface"
+        className="relative my-2 h-[3px] cursor-pointer rounded-sm bg-border"
         onClick={(e) => {
           const box = e.currentTarget.getBoundingClientRect();
           onSeek(((e.clientX - box.left) / box.width) * duration);
@@ -27,19 +27,19 @@ export function Timeline({ duration, current, flags, selected, onSeek, onSelect 
           <button
             key={flag.id}
             type="button"
-            title={`${clock(flag.start)} – ${clock(flag.end)}`}
+            title={`${clock(flag.start)} to ${clock(flag.end)}`}
             aria-label={`Flagged moment at ${clock(flag.start)}`}
             onClick={(e) => {
               e.stopPropagation();
               onSelect(flag);
             }}
-            className={`absolute inset-y-0 min-w-1.5 rounded-sm ${selected === flag.id ? "bg-mark-strong" : "bg-mark-strong/60 hover:bg-mark-strong"}`}
+            className={`absolute -top-[1px] h-[5px] min-w-1.5 rounded-sm ${selected === flag.id ? "bg-mark-strong" : "bg-mark-strong/50 hover:bg-mark-strong"}`}
             style={{ left: pct(flag.start), width: `calc(${pct(flag.end)} - ${pct(flag.start)})` }}
           />
         ))}
-        <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-accent" style={{ left: pct(current) }} />
+        <div className="pointer-events-none absolute -top-[3.5px] size-2.5 -translate-x-1/2 rounded-full bg-text" style={{ left: pct(current) }} />
       </div>
-      <div className="mt-1 flex justify-between font-mono text-xs text-muted">
+      <div className="flex justify-between font-mono text-[12px] text-muted">
         <span>{clock(current)}</span>
         <span>{clock(duration)}</span>
       </div>

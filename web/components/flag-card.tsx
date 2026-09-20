@@ -42,40 +42,41 @@ export function FlagCard({ flag, question, selected, feedback, onJump, onFeedbac
   }
 
   const choice = (useful: boolean) =>
-    `rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
-      feedback?.useful === useful ? "border-accent bg-accent text-accent-fg" : "border-border hover:bg-bg"
-    }`;
+    `btn h-8 px-3 text-[13px] ${feedback?.useful === useful ? "btn-primary" : "btn-ghost"}`;
 
   return (
     <article
       id={flag.id}
-      className={`rounded-lg border bg-surface p-5 ${selected ? "border-mark-strong ring-2 ring-mark-strong/40" : "border-border"}`}
+      className={`space-y-3.5 rounded-[10px] border bg-surface p-[18px] ${selected ? "border-mark-strong ring-2 ring-flag-ai" : "border-flag-ai"}`}
     >
       <header className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onJump}
-          className="rounded-md bg-mark px-2 py-1 font-mono text-xs font-medium text-mark-text hover:bg-mark-strong/50"
+          className="inline-flex h-[26px] items-center gap-1.5 rounded-md bg-flag-ai px-2.5 font-mono text-[12.5px] font-medium text-mark-text hover:bg-mark-strong/30"
         >
-          ▶ {clock(flag.start)} – {clock(flag.end)}
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z" /></svg>
+          {clock(flag.start)} - {clock(flag.end)}
         </button>
-        <span title={CONFIDENCE_HELP[flag.confidence]} className="cursor-help rounded-full border border-border px-2.5 py-0.5 text-xs capitalize">
+        <span title={CONFIDENCE_HELP[flag.confidence]} className="inline-flex h-6 cursor-help items-center rounded-full border border-border bg-surface px-2.5 text-[12.5px] capitalize">
           {flag.confidence} confidence
         </span>
         {flag.families.map((f) => (
-          <span key={f} className="rounded-full bg-bg px-2.5 py-0.5 text-xs text-muted">
+          <span key={f} className="inline-flex h-6 items-center rounded-full bg-bg px-2.5 text-[12.5px] text-muted">
             {FAMILY_LABEL[f]}
           </span>
         ))}
       </header>
 
-      <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted">Question</p>
-      <p className="mt-1 text-sm">{question}</p>
+      <div>
+        <p className="eyebrow">Question</p>
+        <p className="mt-1.5 text-[14.5px] leading-normal">{question}</p>
+      </div>
 
-      <p className="mt-4 text-sm leading-relaxed">{flag.explanation}</p>
+      <p className="text-[14.5px] leading-relaxed">{flag.explanation}</p>
 
-      <details className="mt-4 text-sm">
-        <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted">What was measured</summary>
+      <details className="text-sm">
+        <summary className="eyebrow cursor-pointer">What was measured</summary>
         <dl className="mt-2 space-y-2">
           {families.map(({ family, notes }) => (
             <div key={family}>
@@ -90,22 +91,22 @@ export function FlagCard({ flag, question, selected, feedback, onJump, onFeedbac
         </dl>
       </details>
 
-      <div className="mt-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">Ordinary explanations to rule out</p>
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted">
+      <div>
+        <p className="eyebrow">Ordinary explanations to rule out</p>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-normal text-muted">
           {flag.alternative_explanations.map((text) => (
             <li key={text}>{text}</li>
           ))}
         </ul>
       </div>
 
-      <div className="mt-4 rounded-md border border-border bg-bg p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">How to check</p>
-        <p className="mt-1 text-sm">{flag.verification_prompt}</p>
+      <div className="rounded-lg border border-flag-ai bg-mark px-3.5 py-3">
+        <p className="eyebrow text-mark-text">How to check</p>
+        <p className="mt-1.5 text-[14.5px] leading-normal">{flag.verification_prompt}</p>
       </div>
 
-      <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        <span className="text-xs text-muted">Was this worth your time?</span>
+      <footer className="flex flex-wrap items-center gap-2.5 border-t border-border pt-3.5">
+        <span className="text-[13px] text-muted">Was this worth your time?</span>
         <button type="button" disabled={saving} onClick={() => send(true)} className={choice(true)}>
           Useful
         </button>
@@ -116,7 +117,7 @@ export function FlagCard({ flag, question, selected, feedback, onJump, onFeedbac
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Why? (optional)"
-          className="min-w-40 flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-xs"
+          className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-[13.5px] outline-none placeholder:text-muted focus:border-accent"
         />
       </footer>
     </article>

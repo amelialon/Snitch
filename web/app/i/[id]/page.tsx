@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clock,
   deleteInterview,
   getInterview,
   getTranscript,
@@ -88,107 +89,133 @@ export default function ReviewPage() {
     return { ai, cv, delivery };
   }, [report]);
 
-  if (error) return <p className="rounded-md border border-border bg-surface p-4 text-sm text-danger">{error}</p>;
+  if (error) return <p className="text-sm text-danger">{error}</p>;
   if (!interview) return <p className="text-sm text-muted">Loading…</p>;
 
   const duration = interview.summary.duration_sec ?? transcript?.duration ?? 0;
+  const first = report?.flags[0];
+  const when = new Date(interview.created_at).toLocaleString(undefined, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  const ghost = "btn btn-ghost h-9 px-3.5 text-[13.5px]";
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link href="/" className="text-xs text-muted hover:underline">
-            ← All interviews
+    <div>
+      <header className="flex items-end justify-between gap-6 border-b border-border pb-6">
+        <div className="space-y-2.5">
+          <Link href="/" className="text-[13px] text-muted hover:text-text">
+            Interviews
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{interview.candidate_label}</h1>
+          <h1 className="text-4xl leading-none">{interview.candidate_label}</h1>
+          <p className="text-[14.5px] text-muted">
+            Interviewed {when}.{duration > 0 && <> <span className="font-mono">{clock(duration)}</span>.</>}
+          </p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/live/${id}`} className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface">
+          <Link href={`/live/${id}`} className={ghost}>
             Live room
           </Link>
-          <button
-            onClick={() => rerunInterview(id).then(() => setReport(null))}
-            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface"
-          >
+          <button onClick={() => rerunInterview(id).then(() => setReport(null))} className={ghost}>
             Re-run
           </button>
           <button
             onClick={() => {
               if (confirm("Delete this interview and its files?")) deleteInterview(id).then(() => (location.href = "/"));
             }}
-            className="rounded-md border border-border px-3 py-1.5 text-xs text-danger hover:bg-surface"
+            className={`${ghost} text-danger`}
           >
             Delete
           </button>
         </div>
-      </div>
+      </header>
 
       {interview.status === "processing" && (
-        <div className="rounded-lg border border-border bg-surface p-6">
-          <p className="text-sm font-medium capitalize">{interview.stage}…</p>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-bg">
+        <div className="py-6">
+          <p className="text-[15px] font-medium capitalize">{interview.stage}…</p>
+          <div className="mt-3 h-[3px] max-w-md overflow-hidden rounded-sm bg-border">
             <div className="h-full bg-accent transition-all" style={{ width: `${Math.round(interview.progress * 100)}%` }} />
           </div>
-          <p className="mt-2 text-xs text-muted">This page updates on its own.</p>
+          <p className="mt-2 text-[13px] text-muted">This page updates on its own.</p>
         </div>
       )}
 
       {interview.status === "failed" && (
-        <div className="rounded-lg border border-danger/40 bg-surface p-6">
-          <p className="text-sm font-medium text-danger">This review could not be completed.</p>
+        <div className="py-6">
+          <p className="text-[15px] font-medium text-danger">This review could not be completed.</p>
           <p className="mt-1 text-sm text-muted">{interview.error}</p>
         </div>
       )}
 
       {interview.status === "ready" && report && (
         <>
-          <div className="grid gap-6 lg:grid-cols-[1fr_minmax(320px,420px)]">
-            <div className="space-y-4">
-              <video
-                ref={video}
-                src={mediaUrl(id)}
-                controls
-                onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-                className="w-full rounded-lg border border-border bg-black"
-              />
-              {duration > 0 && (
-                <Timeline
-                  duration={duration}
-                  current={current}
+          <p className="max-w-[72ch] py-5 text-base leading-normal">
+            {report.flags.length === 0 ? (
+              <>No moment was flagged for a second look. That is a normal result.</>
+            ) : (
+              <>
+                {report.flags.length === 1 ? "One moment is" : `${report.flags.length} moments are`} worth a second look
+                {first && (
+                  <>
+                    , starting at <span className="font-mono text-accent">{clock(first.start)}</span>
+                  </>
+                )}
+                . Nothing here is a conclusion; the decision is yours.
+              </>
+            )}
+          </p>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_420px] items-start gap-12">
+            {/* Reading column */}
+            <div className="min-w-0">
+              <div className="flex items-end justify-between gap-4 pb-2">
+                <span className="border-b-2 border-accent pb-2 text-sm font-medium">Transcript</span>
+                <span className="pb-2 text-[12.5px] text-muted">
+                  Follows playback. Click a word to jump.{highlightMode && ` Highlighting ${highlightMode === "ai" ? "AI-text" : highlightMode === "cv" ? "CV" : "delivery"}.`}
+                </span>
+              </div>
+              {transcript ? (
+                <TranscriptPane
+                  units={report.units}
+                  words={transcript.words}
                   flags={report.flags}
-                  selected={selected}
+                  candidate={report.candidate_speaker}
+                  current={current}
+                  canSeek
                   onSeek={seek}
-                  onSelect={(f) => jumpToFlag(f.id, f.start)}
+                  highlight={highlightMode ? highlightSpans[highlightMode] : undefined}
                 />
-              )}
-              {transcript && (
-                <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-border bg-surface p-3">
-                  <TranscriptPane
-                    units={report.units}
-                    words={transcript.words}
-                    flags={report.flags}
-                    candidate={report.candidate_speaker}
-                    current={current}
-                    canSeek
-                    onSeek={seek}
-                    highlight={highlightMode ? highlightSpans[highlightMode] : undefined}
-                  />
-                </div>
+              ) : (
+                <p className="border-t border-border py-5 text-sm text-muted">Loading transcript…</p>
               )}
             </div>
 
-            <div className="space-y-4">
-              <AnalysisBoxes
-                report={report}
-                active={highlightMode}
-                onToggle={(mode) => setHighlightMode((prev) => (prev === mode ? null : mode))}
-              />
-
-              <section className="space-y-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Moments to review</h2>
-                {report.flags.length === 0 && (
-                  <p className="text-sm text-muted">No moments were flagged for a second look. That is a normal result.</p>
+            {/* Rail */}
+            <div className="space-y-6">
+              <div>
+                <video
+                  ref={video}
+                  src={mediaUrl(id)}
+                  controls
+                  onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+                  className="aspect-video w-full rounded-[10px] bg-black"
+                />
+                {duration > 0 && (
+                  <Timeline
+                    duration={duration}
+                    current={current}
+                    flags={report.flags}
+                    selected={selected}
+                    onSeek={seek}
+                    onSelect={(f) => jumpToFlag(f.id, f.start)}
+                  />
                 )}
+              </div>
+
+              <section className="space-y-3">
+                <h2 className="eyebrow text-[12.5px] text-text/70">For review</h2>
+                <AnalysisBoxes
+                  report={report}
+                  active={highlightMode}
+                  onToggle={(mode) => setHighlightMode((prev) => (prev === mode ? null : mode))}
+                />
                 {report.flags.map((flag) => {
                   const unit = report.units.find((u) => u.id === flag.unit_id);
                   return (
@@ -212,15 +239,15 @@ export default function ReviewPage() {
                 })}
               </section>
 
-              <section className="rounded-lg border border-border bg-surface p-4">
-                <h2 className="text-sm font-semibold">Not analyzed</h2>
+              <section className="space-y-2">
+                <h2 className="eyebrow text-[12.5px] text-text/70">Not analyzed</h2>
                 {report.skipped.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted">All enabled signals ran.</p>
+                  <p className="text-[13.5px] text-muted">All enabled signals ran.</p>
                 ) : (
-                  <ul className="mt-2 space-y-1.5 text-sm text-muted">
+                  <ul className="space-y-1.5 text-[13.5px] leading-normal text-muted">
                     {report.skipped.map((s, i) => (
                       <li key={i}>
-                        <span className="text-text">{s.signal}:</span> {s.reason}
+                        <span className="font-medium text-text">{s.signal}:</span> {s.reason}
                       </li>
                     ))}
                   </ul>

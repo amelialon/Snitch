@@ -30,7 +30,7 @@ interface Props {
 
 function Badge({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span title={title} className="cursor-help rounded-full border border-border px-2.5 py-0.5 text-xs capitalize">
+    <span title={title} className="inline-flex h-6 cursor-help items-center rounded-full border border-border bg-surface px-2.5 text-[12.5px] capitalize">
       {children}
     </span>
   );
@@ -38,12 +38,8 @@ function Badge({ children, title }: { children: React.ReactNode; title?: string 
 
 export function AnalysisBoxes({ report, active, onToggle }: Props) {
   const box = (mode: HighlightMode) =>
-    `rounded-lg border p-4 text-left transition-colors hover:bg-bg ${
-      active === mode
-        ? mode === "ai"
-          ? "border-hl-ai ring-2 ring-hl-ai/40"
-          : "border-mark-strong ring-2 ring-mark-strong/40"
-        : "border-border bg-surface"
+    `w-full rounded-[10px] border bg-surface px-4 py-3.5 text-left transition-colors hover:bg-bg disabled:cursor-default disabled:hover:bg-surface ${
+      active === mode ? "border-accent ring-2 ring-flag-ai" : "border-border"
     }`;
 
   const ai = report.ai_text_summary;
@@ -51,27 +47,27 @@ export function AnalysisBoxes({ report, active, onToggle }: Props) {
   const delivery = report.delivery_pattern;
 
   return (
-    <div className="grid grid-cols-1 gap-3">
+    <div className="grid grid-cols-1 gap-2.5">
       {ai ? (
         <button type="button" onClick={() => onToggle("ai")} className={box("ai")}>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">AI-text detection</p>
+          <p className="eyebrow">AI-text detection</p>
           <div className="mt-2">
             <Badge title={AI_CLASS_HELP[ai.dominant_class]}>{ai.dominant_class}</Badge>
           </div>
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-[12.5px] text-muted">
             {ai.counts.human ?? 0} human · {ai.counts.mixed ?? 0} mixed · {ai.counts.ai ?? 0} ai, across {ai.analyzed_count} answer
             {ai.analyzed_count === 1 ? "" : "s"}
           </p>
         </button>
       ) : (
-        <div className="rounded-lg border border-border bg-surface p-4 opacity-60">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">AI-text detection</p>
+        <div className="rounded-[10px] border border-border bg-surface px-4 py-3.5 opacity-60">
+          <p className="eyebrow">AI-text detection</p>
           <p className="mt-2 text-sm text-muted">Not analyzed.</p>
         </div>
       )}
 
       <button type="button" onClick={() => onToggle("cv")} className={box("cv")} disabled={cv.checked_count === 0}>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">CV alignment</p>
+        <p className="eyebrow">CV alignment</p>
         <div className="mt-2">
           {cv.checked_count > 0 ? (
             <Badge title={ALIGNMENT_HELP[cv.level]}>{cv.level}</Badge>
@@ -80,7 +76,7 @@ export function AnalysisBoxes({ report, active, onToggle }: Props) {
           )}
         </div>
         {cv.checked_count > 0 && (
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-[12.5px] text-muted">
             {cv.contradiction_count} contradiction{cv.contradiction_count === 1 ? "" : "s"} across {cv.checked_count} answer
             {cv.checked_count === 1 ? "" : "s"} checked
           </p>
@@ -89,15 +85,15 @@ export function AnalysisBoxes({ report, active, onToggle }: Props) {
 
       {delivery ? (
         <button type="button" onClick={() => onToggle("delivery")} className={box("delivery")}>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Delivery &amp; rhythm</p>
+          <p className="eyebrow">Delivery &amp; rhythm</p>
           <div className="mt-2">
             <Badge title={DELIVERY_HELP[delivery.overall_class]}>{delivery.overall_class}</Badge>
           </div>
-          <p className="mt-2 text-xs text-muted">{delivery.description}</p>
+          <p className="mt-2 text-[12.5px] text-muted">{delivery.description}</p>
         </button>
       ) : (
-        <div className="rounded-lg border border-border bg-surface p-4 opacity-60">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Delivery &amp; rhythm</p>
+        <div className="rounded-[10px] border border-border bg-surface px-4 py-3.5 opacity-60">
+          <p className="eyebrow">Delivery &amp; rhythm</p>
           <p className="mt-2 text-sm text-muted">Not analyzed.</p>
         </div>
       )}
