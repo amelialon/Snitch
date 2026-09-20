@@ -218,3 +218,25 @@ def test_the_report_carries_the_boxed_summaries_for_the_review_page(store):
     assert report.delivery_pattern.overall_class in ("normal", "medium", "abnormal")
     assert report.cv_alignment.checked_count == 0  # no CV was provided, so nothing was checked
     assert report.summary_note
+
+
+def test_a_missing_recording_fails_with_a_readable_reason(tmp_path):
+    from interview_review.adapters.heuristic_analyst import HeuristicAnalyst
+    from interview_review.adapters.json_transcriber import JsonTranscriber
+    from interview_review.adapters.local_store import LocalStore
+    from interview_review.models import Consent, Interview
+    from interview_review.pipeline import run_pipeline
+    from interview_review.ports import Deps
+    from datetime import datetime, timezone
+
+    store = LocalStore(tmp_path)
+    store.create_interview(
+        Interview(id="i1", candidate_label="C", files={"recording": "recording.json"},
+                  consent=Consent(attested_by="r", attested_at=datetime.now(timezone.utc)))
+    )
+
+    run_pipeline("i1", Deps(store=store, transcriber=JsonTranscriber(), analyst=HeuristicAnalyst()))
+
+    saved = store.get_interview("i1")
+    assert saved.status == "failed"
+    assert "never reached storage" in saved.error

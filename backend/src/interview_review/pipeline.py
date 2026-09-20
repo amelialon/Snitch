@@ -51,6 +51,10 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
         stage("transcribing", 0.05)
         transcript = None if force else load_model(store, interview_id, "transcript.json", Transcript)
         if transcript is None:
+            if not store.has_file(interview_id, interview.files["recording"]):
+                raise FileNotFoundError(
+                    "the recording never reached storage (the upload was interrupted). Delete this review and upload again."
+                )
             with store.local_path(interview_id, interview.files["recording"]) as path:
                 transcript = deps.transcriber.transcribe(path)
             save_model(store, interview_id, "transcript.json", transcript)
