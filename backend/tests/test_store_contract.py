@@ -71,3 +71,27 @@ def test_names_cannot_escape_the_store(store):
         store.put_file("i1", "../../evil.txt", io.BytesIO(b"x"))
     with pytest.raises(ValueError):
         store.get_interview("../etc")
+
+
+# --- Firebase credentials: a key-file path locally, the key's JSON inline on Railway ---------------
+
+
+def test_firebase_credentials_accept_a_path_or_inline_json():
+    from interview_review.adapters.firebase_store import service_account
+
+    assert service_account("./firebase-service-account.json") == "./firebase-service-account.json"
+    assert service_account(' {"type": "service_account", "project_id": "demo"} ') == {
+        "type": "service_account",
+        "project_id": "demo",
+    }
+
+
+def test_firebase_credentials_reject_empty_or_broken_json():
+    import pytest
+
+    from interview_review.adapters.firebase_store import service_account
+
+    with pytest.raises(ValueError, match="empty"):
+        service_account("  ")
+    with pytest.raises(ValueError, match="does not parse"):
+        service_account('{"type": ')

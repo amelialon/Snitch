@@ -64,6 +64,35 @@ vendor API key. See [live recording validation](docs/live-recording-validation.m
 Restart the Python backend after updating it so the new live-session routes are available.
 On Windows, from `backend`: `.\.venv\Scripts\python.exe -m interview_review.cli serve`.
 
+## Deploy (backend on Railway, web on Vercel)
+
+The API and its background pipeline jobs are one long-running process, so the backend cannot be a
+serverless function; it runs as a container on Railway. The web app is static-friendly Next.js and
+goes on Vercel. Neither needs code changes, only environment variables.
+
+**Backend (Railway):** create a service from this repo with root directory `backend`. It picks up
+[backend/Dockerfile](backend/Dockerfile) and [backend/railway.json](backend/railway.json)
+(one replica, no sleeping, `/health` check). Set:
+
+| Variable | Value |
+|---|---|
+| `STORE` | `firebase` — the container's disk is wiped on every deploy, so `local` would lose recordings |
+| `FIREBASE_CREDENTIALS` | the service-account key file's **JSON contents** (no file to point at on Railway) |
+| `FIREBASE_STORAGE_BUCKET` | `your-project-id.firebasestorage.app` |
+| `ASSEMBLYAI_API_KEY`, `OPENAI_API_KEY`, `GPTZERO_API_KEY` | as in `.env.example`; omit any to use the offline adapter |
+| `WEB_ORIGIN` | the Vercel URL(s), comma-separated, e.g. `https://your-app.vercel.app,http://localhost:3000` |
+| `WEBRTC_ICE_SERVERS` | optional TURN relay for live interviews on restrictive networks |
+
+Keep it at one replica and one worker: the live-interview signaling registry is in process memory,
+and a background review job dies with its process if the service is scaled to zero.
+
+**Web (Vercel):** import the repo with root directory `web` and set
+`NEXT_PUBLIC_API_URL=https://<your-railway-service>.up.railway.app`.
+
+**Access:** the API has no auth. A deployed URL must be treated as the demo environment in
+context.md rule 11 — mock or explicitly consented recordings only — and should sit behind a
+deployment password before anyone outside the team is given the link (architecture.md §7).
+
 ## Tests
 
 ```bash
@@ -83,15 +112,9 @@ cd web && npx tsc --noEmit
 ## Status
 
 Working: upload → transcribe → segment → baseline → timing/delivery/content signals → fusion →
-<<<<<<< Updated upstream
-report, with CV consistency and reviewer feedback. Live interview room (Daily) with the canary
-tooling — manifest load, preload, preview, gain, Send / Send+Ask into the outgoing audio mix,
-question timestamps, and marker detection. Set `NEXT_PUBLIC_DAILY_ROOM_URL` to use the room.
-Zoom App (`zoom-app/`) with the same canaries: visual overlay on the outgoing camera (Layers API)
-and audio via app-share-with-sound; needs a Marketplace app + ngrok (see its README).
-=======
 report, with CV consistency and reviewer feedback. In-app WebRTC interviews with screen sharing,
 browser recording/recovery, and automatic upload into the review pipeline.
->>>>>>> Stashed changes
+Zoom App (`zoom-app/`) with the canaries: visual overlay on the outgoing camera (Layers API)
+and audio via app-share-with-sound; needs a Marketplace app + ngrok (see its README).
 Gaze/prosody signals, separate clean-mic recording, and the bias eval set are post-demo
 (architecture.md §10–§11).

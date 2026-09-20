@@ -6,6 +6,7 @@ Uses the Admin SDK, which bypasses security rules; the rules themselves deny all
 
 from __future__ import annotations
 
+import json
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -25,15 +26,30 @@ _UPLOAD_TIMEOUT_SEC = 300
 _DOWNLOAD_RETRY_DEADLINE_SEC = 1800
 
 
+def service_account(source: str) -> str | dict:
+    """FIREBASE_CREDENTIALS is a path to the key file locally, or the file's JSON itself on a host
+    that only has environment variables (Railway); the Admin SDK takes either form."""
+    text = source.strip()
+    if text.startswith("{"):
+        try:
+            return json.loads(text)
+        except ValueError as exc:
+            raise ValueError("FIREBASE_CREDENTIALS looks like JSON but does not parse") from exc
+    if not text:
+        raise ValueError("FIREBASE_CREDENTIALS is empty: set the key file path or its JSON")
+    return text
+
+
 class FirebaseStore:
     name = "firebase"
 
-    def __init__(self, credentials_path: str, bucket: str) -> None:
+    def __init__(self, credentials_source: str, bucket: str) -> None:
         import firebase_admin
         from firebase_admin import credentials, firestore, storage
 
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(credentials.Certificate(credentials_path), {"storageBucket": bucket})
+            cert = credentials.Certificate(service_account(credentials_source))
+            firebase_admin.initialize_app(cert, {"storageBucket": bucket})
         self._docs = firestore.client().collection("interviews")
         self._bucket = storage.bucket()
         from google.cloud.storage.retry import DEFAULT_RETRY

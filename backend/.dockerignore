@@ -1,0 +1,9 @@
+.venv/
+data/
+tests/
+samples/
+.env
+*-service-account.json
+__pycache__/
+*.egg-info/
+.pytest_cache/

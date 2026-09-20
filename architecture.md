@@ -74,6 +74,8 @@ This is revision 2. Revision 1 was reviewed against the deep-module vocabulary (
 
 Two deployables: `web/` and `backend/`. The web app talks **only** to the backend API. It has no Firebase dependency and no vendor keys.
 
+Deployment shape: `web/` on Vercel; `backend/` as one container on a long-running host (Railway, via `backend/Dockerfile` + `backend/railway.json`). The backend cannot be serverless: `POST /interviews` hands the pipeline to a FastAPI background task that outlives the request, `/live-interviews/{id}/signal` is a WebSocket, and the signaling room registry lives in process memory — so exactly one replica, one worker, never scaled to zero. `FirebaseStore` is mandatory there (ephemeral disk); `FIREBASE_CREDENTIALS` may hold the key JSON itself since the host has no files. See README "Deploy".
+
 ## 2. Modules
 
 | Module | Interface (what callers must know) | Hides |
