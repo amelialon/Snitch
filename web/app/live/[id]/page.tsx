@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
-import { getLiveConfig, uploadLiveRecording } from "@/lib/api";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { getLiveConfig, saveVisualMarker, uploadLiveRecording } from "@/lib/api";
+import { ScreenOverlay, type VisualMarker } from "@/lib/screen-overlay";
 import { LiveCall, type CallTracks } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
 import {
@@ -37,6 +38,12 @@ function LiveRoom() {
   const recorder = useRef<InterviewRecorder | null>(null);
   const source = useRef<MediaStream | null>(null);
   const screen = useRef<MediaStream | null>(null);
+  const overlay = useRef<ScreenOverlay | null>(null);
+  const marker = useRef<VisualMarker | null>(null);
+  const shareGeneration = useRef(0);
+  const shareStarting = useRef(false);
+  const [markerText, setMarkerText] = useState("");
+  const [opacity, setOpacity] = useState(.35);
 
   const ending = useRef(false);
   const mounted = useRef(true);
@@ -72,6 +79,17 @@ function LiveRoom() {
   const finishRef = useRef<(reason?: string) => Promise<void>>(
     async () => {}
   );
+
+  const releaseOverlay = useCallback(() => {
+    shareGeneration.current++;
+    shareStarting.current = false;
+    overlay.current?.stop();
+    overlay.current = null;
+    const completed = marker.current;
+    marker.current = null;
+    if (completed) void saveVisualMarker(id, { ...completed, finished_at: new Date().toISOString() })
+      .catch(() => { if (mounted.current) setError("Screen sharing stopped, but its watermark end time could not be saved."); });
+  }, [id]);
 
   useEffect(() => {
     mounted.current = true;
@@ -116,13 +134,14 @@ function LiveRoom() {
       void recorder.current?.stop();
       recorder.current = null;
 
+      releaseOverlay();
       screen.current?.getTracks().forEach((track) => track.stop());
 
       call.current?.leave();
 
       source.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [id, role]);
+  }, [id, role, releaseOverlay]);
 
   async function upload(recording: {
     session: SavedRecording;
@@ -181,6 +200,9 @@ function LiveRoom() {
     try {
       const blob = recording ? await recording.stop() : null;
 
+      releaseOverlay();
+      setMarkerText("");
+      setSharePending(false);
       screen.current?.getTracks().forEach((track) => track.stop());
       screen.current = null;
 
@@ -347,6 +369,9 @@ function LiveRoom() {
   }
 
   async function stopShare() {
+    releaseOverlay();
+    setMarkerText("");
+    setSharePending(false);
     screen.current?.getTracks().forEach((track) => track.stop());
 
     screen.current = null;
@@ -357,10 +382,13 @@ function LiveRoom() {
   }
 
   async function startShare() {
-    if (sharePending || screen.current) {
+    if (shareStarting.current || screen.current) {
       return;
     }
 
+    shareStarting.current = true;
+    const generation = ++shareGeneration.current;
+    const current = () => mounted.current && !ending.current && generation === shareGeneration.current;
     setSharePending(true);
     setError("");
 
@@ -370,27 +398,39 @@ function LiveRoom() {
         audio: false,
       });
 
-      if (!mounted.current || ending.current || !call.current) {
+      if (!current() || !call.current) {
         captured.getTracks().forEach((track) => track.stop());
         return;
       }
 
-      screen.current = captured;
-
-      const track = captured.getVideoTracks()[0];
-
-      track.onended = () => {
-        void stopShare();
-      };
-
+      const compositor = new ScreenOverlay(captured, () => { if (current()) void stopShare(); });
+      overlay.current = compositor;
+      const output = await compositor.start(opacity);
+      if (!current()) { compositor.stop(); return; }
+      const created = compositor.marker!;
+      await saveVisualMarker(id, created);
+      if (!current()) {
+        compositor.stop();
+        await saveVisualMarker(id, { ...created, finished_at: new Date().toISOString() });
+        return;
+      }
+      marker.current = created;
+      screen.current = output;
+      const track = output.getVideoTracks()[0];
       await call.current.share(track);
-
+      if (!current()) return;
       setSharing(track);
+      setMarkerText(created.expected_marker);
     } catch (e) {
-      await stopShare();
-      setError((e as Error).message);
+      if (current()) {
+        await stopShare();
+        setError((e as Error).message);
+      }
     } finally {
-      setSharePending(false);
+      if (generation === shareGeneration.current) {
+        shareStarting.current = false;
+        setSharePending(false);
+      }
     }
   }
 
@@ -475,6 +515,7 @@ function LiveRoom() {
           <p className="text-sm">
             Your camera, microphone, and any shared screen will be
             recorded for automated interview review.
+            Shared screens include a subtle visual watermark.
           </p>
 
           <label className="flex gap-2 text-sm">
@@ -542,6 +583,16 @@ function LiveRoom() {
               muted
               contain
             />
+          )}
+
+          {phase === "live" && (
+            <div className="space-y-2 text-sm">
+              <label className="flex items-center gap-3">
+                Visual watermark visibility: {Math.round(opacity * 100)}%
+                <input aria-label="Visual watermark visibility" type="range" min="0.1" max="0.8" step="0.05" value={opacity} disabled={sharePending || !!sharing} onChange={e => setOpacity(Number(e.target.value))} />
+              </label>
+              {markerText && <p role="status">Visual watermark active: <code>{markerText}</code>. Included in the shared video and recording.</p>}
+            </div>
           )}
 
           {phase === "live" && (
