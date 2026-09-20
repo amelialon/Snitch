@@ -68,7 +68,12 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     add_live_routes(app, deps)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=os.environ.get("WEB_ORIGIN", "http://localhost:3000").split(","),
+        # Origins match exactly, so a pasted space or trailing slash would block the web app.
+        allow_origins=[
+            origin.strip().rstrip("/")
+            for origin in os.environ.get("WEB_ORIGIN", "http://localhost:3000").split(",")
+            if origin.strip()
+        ],
         allow_methods=["*"],
         allow_headers=["*"],
     )
