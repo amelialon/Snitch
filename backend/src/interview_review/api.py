@@ -135,10 +135,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             consent=Consent(attested_by=attested_by.strip(), attested_at=datetime.now(timezone.utc)),
             files=names,
             fingerprints={role: _sha256(upload.file) for role, (upload, _) in uploads.items()},
-<<<<<<< HEAD
-=======
             stage="uploading to storage",  # can take minutes on a slow link; the pipeline sets the next stage
->>>>>>> 07b2a079614bf276b99cee4083ab507dd5cd74c1
         )
         cached = _cached_source(interview)
         exact = cached is not None and cached.fingerprints == interview.fingerprints and cached.context_flags == interview.context_flags
@@ -156,24 +153,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         try:
             for role, (upload, _) in uploads.items():
                 store.put_file(interview.id, names[role], upload.file)
-<<<<<<< HEAD
-        except Exception as exc:  # a half-uploaded interview would sit at "queued" forever
-            store.delete_interview(interview.id)
-            raise HTTPException(502, f"Storing the upload failed: {exc}") from exc
-
-        # Cache by content: the same recording uploaded again (any file name) reuses the earlier
-        # transcript and segmentation; if the documents and flags match too, the whole report.
-        cached = _cached_source(interview)
-        if cached is not None:
-            _copy_file(cached.id, interview.id, "transcript.json")
-            _copy_file(cached.id, interview.id, "segmentation.json")
-            if cached.fingerprints == interview.fingerprints and cached.context_flags == interview.context_flags:
-                _copy_file(cached.id, interview.id, "report.json")
-                store.update_interview(
-                    interview.id, {"status": "ready", "stage": "done", "progress": 1.0, "summary": cached.summary}
-                )
-                return existing(interview.id)
-=======
         except Exception as exc:
             store.delete_interview(interview.id)  # no half-created record left in the list
             raise HTTPException(502, f"Could not store the upload, please try again ({type(exc).__name__}).") from exc
@@ -183,7 +162,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             for name in ("transcript.json", "segmentation.json"):
                 if store.has_file(cached.id, name):
                     store.copy_file(cached.id, interview.id, name)
->>>>>>> 07b2a079614bf276b99cee4083ab507dd5cd74c1
 
         background.add_task(run_pipeline, interview.id, deps)
         return interview
@@ -200,15 +178,6 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         exact = [i for i in same_recording if i.fingerprints == interview.fingerprints and i.context_flags == interview.context_flags]
         return (exact or same_recording or [None])[0]
 
-<<<<<<< HEAD
-    def _copy_file(src_id: str, dst_id: str, name: str) -> None:
-        if not store.has_file(src_id, name):
-            return
-        with store.local_path(src_id, name) as path, path.open("rb") as src:
-            store.put_file(dst_id, name, src)
-
-=======
->>>>>>> 07b2a079614bf276b99cee4083ab507dd5cd74c1
     @app.post("/live-interviews", status_code=201)
     def create_live_interview(body: LiveInterviewIn) -> Interview:
         if not body.consent_attested or not body.attested_by.strip() or not body.candidate_label.strip():
