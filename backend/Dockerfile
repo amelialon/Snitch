@@ -5,6 +5,9 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
+# The transcriber extracts an MP3 from the recording before uploading it (adapters/audio.py).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install ".[firebase]"
