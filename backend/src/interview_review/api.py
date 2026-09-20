@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, Field
 
 from .canary import CanaryEvent, MarkerMatch, QuestionEvent, SessionLog, check_marker
 from .models import Consent, Feedback, Interview, Report, Transcript
@@ -31,6 +31,21 @@ class CheckMarkerIn(BaseModel):
     answer_text: str
 
 
+class LiveInterviewIn(BaseModel):
+    candidate_label: str = Field(min_length=1, max_length=200)
+    attested_by: str = Field(min_length=1, max_length=200)
+    consent_attested: bool = False
+
+
+class ScreenShareIn(BaseModel):
+    sharing_session_id: uuid.UUID
+    expected_marker: str = Field(pattern=r"^workingTotal_[a-f0-9]{10}$")
+    started_at: AwareDatetime
+    finished_at: AwareDatetime | None = None
+    opacity: float = Field(ge=0.1, le=0.8)
+    contrast: int = Field(ge=20, le=160)
+
+
 def create_app(deps: Deps | None = None) -> FastAPI:
     if deps is None:
         from .wiring import build_deps
@@ -39,6 +54,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
     store = deps.store
 
     app = FastAPI(title="Interview Integrity Review")
+    from .live import add_live_routes
+    add_live_routes(app, deps)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=os.environ.get("WEB_ORIGIN", "http://localhost:3000").split(","),
@@ -119,6 +136,48 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         background.add_task(run_pipeline, interview.id, deps)
         return interview
 
+    @app.post("/live-interviews", status_code=201)
+    def create_live_interview(body: LiveInterviewIn) -> Interview:
+        if not body.consent_attested or not body.attested_by.strip() or not body.candidate_label.strip():
+            raise HTTPException(400, "A candidate label and attestation of consent to recording and automated review are required.")
+        interview = Interview(
+            id=uuid.uuid4().hex[:12], candidate_label=body.candidate_label.strip(),
+            stage="live", consent=Consent(attested_by=body.attested_by.strip(), attested_at=datetime.now(timezone.utc), text_version="live-recording-v1"),
+        )
+        store.create_interview(interview)
+        return interview
+
+    @app.put("/interviews/{interview_id}/screen-shares/{sharing_session_id}")
+    def save_screen_share(interview_id: str, sharing_session_id: uuid.UUID, body: ScreenShareIn) -> dict:
+        existing(interview_id)
+        if body.sharing_session_id != sharing_session_id:
+            raise HTTPException(400, "Sharing session ID mismatch")
+        if body.expected_marker != f"workingTotal_{sharing_session_id.hex[:10]}":
+            raise HTTPException(400, "Marker does not match sharing session ID")
+        name = f"screen-share-{sharing_session_id}.json"
+        previous = load_model(store, interview_id, name, ScreenShareIn)
+        if previous and previous.model_dump(exclude={"finished_at"}) != body.model_dump(exclude={"finished_at"}):
+            raise HTTPException(409, "A sharing session's identifier and settings cannot be changed")
+        if previous and previous.finished_at and previous.finished_at != body.finished_at:
+            raise HTTPException(409, "A finished sharing session cannot be reopened or changed")
+        if body.finished_at and body.finished_at < body.started_at:
+            raise HTTPException(400, "End time precedes start time")
+        save_model(store, interview_id, name, body)
+        return {"ok": True}
+
+    @app.get("/interviews/{interview_id}/screen-shares/{sharing_session_id}")
+    def get_screen_share(interview_id: str, sharing_session_id: uuid.UUID) -> ScreenShareIn:
+        existing(interview_id)
+        share = load_model(store, interview_id, f"screen-share-{sharing_session_id}.json", ScreenShareIn)
+        if share is None:
+            raise HTTPException(404, "No such screen-sharing session")
+        return share
+
+    @app.post("/interviews/{interview_id}/screen-shares/{sharing_session_id}/check")
+    def check_screen_share(interview_id: str, sharing_session_id: uuid.UUID, body: CheckMarkerIn) -> MarkerMatch:
+        share = get_screen_share(interview_id, sharing_session_id)
+        return check_marker(body.answer_text, share.expected_marker)
+
     @app.get("/interviews")
     def list_interviews() -> list[Interview]:
         return store.list_interviews()
@@ -139,7 +198,9 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     @app.get("/interviews/{interview_id}/media")
     def get_media(interview_id: str):
-        name = existing(interview_id).files["recording"]
+        name = existing(interview_id).files.get("recording")
+        if not name:
+            raise HTTPException(404, "This live interview has no recording")
         url = store.public_url(interview_id, name)
         if url:
             return RedirectResponse(url)
@@ -149,7 +210,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
 
     @app.post("/interviews/{interview_id}/rerun", status_code=202)
     def rerun(interview_id: str, background: BackgroundTasks, force: bool = False) -> dict:
-        existing(interview_id)
+        if not existing(interview_id).files.get("recording"):
+            raise HTTPException(400, "Upload a recording before requesting analysis")
         store.update_interview(interview_id, {"status": "processing", "stage": "queued", "progress": 0.0})
         background.add_task(run_pipeline, interview_id, deps, force=force)
         return {"ok": True}

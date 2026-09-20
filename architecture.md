@@ -1,5 +1,56 @@
 # Architecture
 
+## Current live call and recording flow
+
+The native WebRTC implementation replaces Daily and the live canary/watermark interface.
+`live.py` supplies two-person WebSocket signaling under `/live-interviews/{id}/signal` and
+`GET /live-config` for optional operator-configured ICE servers. Only the host creates the
+audio/camera/screen transceivers; the candidate answers using those negotiated transceivers.
+The signaling registry is process-local and requires one API worker. Deployment across machines
+needs reachable HTTPS/WSS and may require TURN; no external website is used by participants.
+
+`InterviewRecorder` mixes the interviewer and remote microphone into one audio bus and records
+a 1280×720 canvas containing both cameras plus any shared screen. MediaRecorder emits chunks
+every three seconds; IndexedDB stores recovery copies. The browser retains a completed video
+until the server accepts it. End/peer departure finalizes recording before stopping tracks.
+Abrupt tab/browser termination may lose the last unflushed chunk; reopen the room for recovery.
+The page's unload guard warns about leaving while recording/uploading, but SPA navigation can
+still require recovery on return. Browser background throttling can reduce video frame rate.
+
+`POST /live-interviews/{id}/recording` validates a consented WebM/MP4 upload, attaches it to an
+unrecorded live interview (or creates a new review when the original already has a recording),
+then runs the existing pipeline. A persistent receipt keyed by recording UUID deduplicates
+retries. Upload finalization is serialized within the single API worker. Background processing
+is still the existing in-process task model; process failure may require a manual rerun.
+Historical canary record models remain compatible with old reviews; new calls emit no canaries.
+
+The screen-share implementation notes below describe the superseded watermark prototype.
+
+## Live screen-share implementation (2026-09-19)
+
+`web/lib/screen-overlay.ts` owns capture-frame readiness, local pixel analysis and a canvas
+compositor. A 15 fps canvas stream feeds Daily `startScreenShare({mediaStream})`; no CSS overlay
+is relied upon for transmission. An 8×8 candidate search samples the complete padded text
+footprint at a maximum analysis width of 640 pixels every 450 ms. It computes RGB variance,
+luminance, and adjacent-pixel edge density, with hysteresis and smooth movement. These heuristics
+cannot guarantee avoidance of every UI control. Browser background throttling may reduce fps.
+
+`ScreenShare` handles chooser cancellation, SDK readiness/error events, track end/mute, navigation,
+call leave and pending-start cancellation. It persists the identifier before transmission and
+fails closed if that save fails. End-timestamp failures offer retry while the component remains
+mounted; an abrupt tab/process termination can leave the end timestamp absent.
+
+`POST /live-interviews` creates a consented, recording-free record with `stage=live`.
+`PUT/GET /interviews/{id}/screen-shares/{uuid}` stores/reads a separate JSON artifact per share;
+identity and settings are immutable and writes are idempotent. `POST .../{uuid}/check` performs
+whole-identifier matching against submitted text, without feeding a verdict into the pipeline.
+Concurrent interviews need distinct Daily room URLs; this demo does not provision Daily rooms.
+
+`/live/calibrate` uses two local RTCPeerConnections with VP8 preference and a 1 Mbps send cap,
+then snapshots the decoded receiver video. It supports blind recovery entry and JSON export.
+It is a local codec check, not an SFU/network/device certification. Remote test procedure and
+observations are in `docs/screen-share-validation.md`.
+
 How the demo system is put together. Product behavior lives in [SPEC.md](SPEC.md); background, glossary, and decisions live in [context.md](context.md).
 
 This is revision 2. Revision 1 was reviewed against the deep-module vocabulary (module, interface, depth, seam, adapter) and cut down; §9 records what was removed and why.

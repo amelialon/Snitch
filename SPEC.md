@@ -2,6 +2,32 @@
 
 A post-interview review tool for recruiters. It analyzes a recorded interview and surfaces a small number of moments worth a second look, with evidence. It never issues a verdict: no cheating score, no pass/fail. The reviewer makes the call.
 
+## Current live interview behavior
+
+Participants join using an invitation link on this app. No external room setup is required.
+The interviewer confirms recording/review consent and starts recording at join. Cameras,
+microphones, and the shared screen are recorded. End interview uploads the video and creates
+a review automatically; failed uploads offer retry, playback, and download. Browser recovery
+copies remain until upload succeeds. Canary/watermark injection controls are removed.
+This change does not modify review signals, corroboration requirements, or candidate decisions.
+
+## Superseded live screen-sharing prototype (2026-09-19)
+
+The header exposes Live interviews with creation and existing-room access. Consented live
+sessions can exist before any recording is uploaded. Each successful screen capture gets a
+fresh benign identifier and timestamp persisted under its interview. No question answer or
+solving instruction is embedded. Pixel analysis every 450 ms evaluates an 8×8 set of candidate
+placements using RGB variance, luminance, and edge density. Placement is heuristic, not
+semantic text/UI recognition. Stable locations are preferred; relocation is smoothed and faded.
+Background-relative color and adjustable opacity keep the marker subtly visible. The marker
+is composited into the transmitted screen track. Stopping or losing capture/call ends processing
+and transmission. Screen audio is not included.
+
+Exact identifier checking is available for submitted text. It is attribution evidence only;
+it does not independently create a flag or change candidate scoring. Visibility settings must
+be evaluated from received screenshots after compression. The calibration page provides local
+WebRTC checks; actual Daily calls and remote-device screenshots remain the acceptance target.
+
 ## 1. Principles
 
 These constrain every design decision below.

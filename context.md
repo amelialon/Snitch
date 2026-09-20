@@ -1,5 +1,19 @@
 # Project Context
 
+Current live interview flow: calls now run inside the app using WebRTC and backend WebSocket
+signaling. Daily room setup and live canary/watermark controls were removed at the user's request.
+Recorded interviews capture both cameras/microphones plus screen sharing; ending uploads the
+recording into the review pipeline, with browser recovery and retry on upload failure. Participants
+need no external website. Public/device-to-device use still needs reachable HTTPS and potentially
+a configured TURN relay. Earlier watermark notes below are historical, not the active UI.
+
+Live screen sharing (2026-09-19): the header now exposes Live interviews. The existing Daily
+integration transmits an adaptive, human-visible identifier composited into shared video.
+Generation is local and random; no LLM or question-solving instruction is used. Each capture
+has a persisted session ID and timestamp. Exact matches are attribution signals only, without
+changes to fusion, thresholds, or candidate decisions. Visibility remains experimental until
+remote-device calibration; see `docs/screen-share-validation.md`.
+
 Read this first. It is the short version of what this project is, what has been decided and why, and the rules that anyone (human or AI assistant) working in this repo must not break. Details live in [SPEC.md](SPEC.md) (product behavior) and [architecture.md](architecture.md) (system design).
 
 _Last updated: 2026-09-19. Status: pre-code; spec and architecture written, nothing built yet._

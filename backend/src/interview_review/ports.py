@@ -129,4 +129,4 @@ def load_model(store: Store, interview_id: str, name: str, cls: type[M]) -> M | 
     if not store.has_file(interview_id, name):
         return None
     with store.local_path(interview_id, name) as path:
-        return cls.model_validate_json(path.read_text())
+        return cls.model_validate_json(path.read_text(encoding="utf-8"))

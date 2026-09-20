@@ -1,331 +1,712 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { logCanary, logQuestion } from "@/lib/api";
-import { type AudioCanary, loadManifest } from "@/lib/canary";
-import { LiveCall, type RemoteTile } from "@/lib/daily";
-import { OutgoingAudioMixer } from "@/lib/live-audio";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { getLiveConfig, uploadLiveRecording } from "@/lib/api";
+import { LiveCall, type CallTracks } from "@/lib/live-call";
+import { InterviewRecorder } from "@/lib/interview-recorder";
+import {
+  recoverRecording,
+  removeRecording,
+  type SavedRecording,
+} from "@/lib/recording-store";
 import { VideoTile } from "@/components/video-tile";
 
-const ROOM_URL = process.env.NEXT_PUBLIC_DAILY_ROOM_URL ?? "";
-const uid = () => Math.random().toString(36).slice(2, 9);
+type Phase = "idle" | "joining" | "live" | "saving" | "retry" | "ended";
 
-type CanaryStatus = "idle" | "loading" | "ready" | "sending" | "sent";
+const emptyTracks: CallTracks = {
+  camera: null,
+  audio: null,
+  screen: null,
+};
 
-export default function LiveRoom() {
+export default function LiveRoomPage() {
+  return (
+    <Suspense fallback={<p>Loading interview…</p>}>
+      <LiveRoom />
+    </Suspense>
+  );
+}
+
+function LiveRoom() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
 
-  const mixer = useRef<OutgoingAudioMixer | null>(null);
   const call = useRef<LiveCall | null>(null);
-  const [armed, setArmed] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const recorder = useRef<InterviewRecorder | null>(null);
+  const source = useRef<MediaStream | null>(null);
+  const screen = useRef<MediaStream | null>(null);
+
+  const ending = useRef(false);
+  const mounted = useRef(true);
+  const busy = useRef(false);
+
+  const role =
+    useSearchParams().get("role") === "candidate" ? "candidate" : "host";
+
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [consent, setConsent] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
   const [error, setError] = useState("");
-  const [localVideo, setLocalVideo] = useState<MediaStreamTrack | null>(null);
-  const [remotes, setRemotes] = useState<RemoteTile[]>([]);
+  const [notice, setNotice] = useState("");
 
-  // canary state
-  const [canaries, setCanaries] = useState<AudioCanary[]>([]);
-  const [selected, setSelected] = useState<AudioCanary | null>(null);
-  const [status, setStatus] = useState<CanaryStatus>("idle");
-  const [gainDb, setGainDb] = useState(-24);
-  const [audibleDev, setAudibleDev] = useState(true);
-  const [askNow, setAskNow] = useState(false);
+  const [local, setLocal] = useState<MediaStreamTrack | null>(null);
+  const [remote, setRemote] = useState<CallTracks>(emptyTracks);
 
-  // questions
-  const [questions, setQuestions] = useState<{ id: string; text: string; active: boolean }[]>([]);
-  const [draft, setDraft] = useState("");
+  const [sharing, setSharing] = useState<MediaStreamTrack | null>(null);
+  const [sharePending, setSharePending] = useState(false);
 
-  useEffect(() => {
-    loadManifest().then(setCanaries).catch((e: Error) => setError(e.message));
-    return () => {
-      call.current?.leave().catch(() => {});
-      mixer.current?.close().catch(() => {});
-    };
-  }, []);
+  const [connected, setConnected] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(true);
 
-  // Arming builds the audio graph from the mic alone — no call needed. This is what makes the
-  // injection testable on its own: Preview and gain work after arming, before any Daily room.
-  const ensureMixer = useCallback(async (): Promise<OutgoingAudioMixer> => {
-    if (mixer.current) return mixer.current;
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(async () => {
-      // fall back to audio-only for a pure injection test on a machine with no camera
-      return navigator.mediaDevices.getUserMedia({ audio: true });
-    });
-    const m = new OutgoingAudioMixer(micStream, audibleDev);
-    await m.resume();
-    mixer.current = m;
-    setLocalVideo(micStream.getVideoTracks()[0] ?? null);
-    setArmed(true);
-    return m;
-  }, [audibleDev]);
+  const [progress, setProgress] = useState(0);
 
-  async function arm() {
-    setError("");
-    try {
-      await ensureMixer();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  const [saved, setSaved] = useState<{
+    session: SavedRecording;
+    blob: Blob;
+  } | null>(null);
 
-  async function connect() {
-    setError("");
-    if (!ROOM_URL) {
-      setError("No Daily room configured. Set NEXT_PUBLIC_DAILY_ROOM_URL to a room URL to start the call. You can still arm the mic and Preview without a room.");
-      return;
-    }
-    try {
-      const m = await ensureMixer();
-
-      const c = new LiveCall();
-      const refresh = () => {
-        setLocalVideo(c.localVideoTrack());
-        setRemotes(c.remotes());
-        setConnected(c.isConnected());
-      };
-      c.on("participant-updated", refresh);
-      c.on("participant-joined", refresh);
-      c.on("participant-left", refresh);
-      c.on("joined-meeting", refresh);
-      // The recruiter's camera goes out normally; the mixed mic(+canary) track is the audio source.
-      await c.join(ROOM_URL, m.outgoingTrack);
-      call.current = c;
-      refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function selectCanary(canary: AudioCanary) {
-    setSelected(canary);
-    setAskNow(false);
-    setStatus("loading");
-    try {
-      const m = await ensureMixer(); // arm the mic if it isn't already
-      await m.preload(canary); // preload now, never at send time
-      setStatus("ready");
-    } catch (e) {
-      setError((e as Error).message);
-      setStatus("idle");
-    }
-  }
-
-  const activeQuestionId = questions.find((q) => q.active)?.id ?? null;
-
-  const send = useCallback(
-    async (thenAsk: boolean) => {
-      const m = mixer.current;
-      if (!m || !selected || status !== "ready") return;
-      setAskNow(false);
-      setStatus("sending");
-      const result = await m.send(selected, gainDb); // mic keeps flowing; canary mixed in
-      setStatus("sent");
-      logCanary(id, {
-        canary_id: selected.id,
-        question_id: activeQuestionId,
-        expected_marker: selected.expectedMarker,
-        instruction: selected.instruction,
-        channel: "audio",
-        delivery_method: "outgoing-audio-mix",
-        platform: "daily",
-        gain_db: result.gainDb,
-        sent_at: new Date(result.sentAt).toISOString(),
-        finished_at: new Date(result.finishedAt).toISOString(),
-      }).catch(() => {});
-      if (thenAsk) {
-        setTimeout(() => setAskNow(true), 100); // small margin after the canary finishes
-      }
-    },
-    [id, selected, status, gainDb, activeQuestionId],
+  const finishRef = useRef<(reason?: string) => Promise<void>>(
+    async () => {}
   );
 
-  async function preview() {
-    if (mixer.current && selected && status !== "sending") await mixer.current.preview(selected, gainDb);
+  useEffect(() => {
+    mounted.current = true;
+
+    Promise.all([
+      getLiveConfig(),
+      role === "host" ? recoverRecording(id) : Promise.resolve(null),
+    ])
+      .then(([, found]) => {
+        if (mounted.current && found) {
+          setSaved(found);
+          setPhase("retry");
+          setNotice(
+            "A recording from this room is saved in this browser. Save it as a review or download it before starting another interview."
+          );
+        }
+
+        if (mounted.current) {
+          setLoaded(true);
+        }
+      })
+      .catch(() => {
+        setError(
+          "Could not prepare the room. Check that the backend is running and browser site storage is allowed."
+        );
+      });
+
+    const protect = (e: BeforeUnloadEvent) => {
+      if (busy.current || recorder.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    window.addEventListener("beforeunload", protect);
+
+    return () => {
+      mounted.current = false;
+
+      window.removeEventListener("beforeunload", protect);
+
+      void recorder.current?.stop();
+      recorder.current = null;
+
+      screen.current?.getTracks().forEach((track) => track.stop());
+
+      call.current?.leave();
+
+      source.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, [id, role]);
+
+  async function upload(recording: {
+    session: SavedRecording;
+    blob: Blob;
+  }) {
+    setPhase("saving");
+    setProgress(0);
+    setError("");
+    busy.current = true;
+
+    try {
+      if (!recording.blob.size) {
+        throw new Error(
+          "No recording frames were captured. Clear the empty recording and start a new interview."
+        );
+      }
+
+      const reviewId = await uploadLiveRecording(
+        id,
+        recording.session.id,
+        recording.blob,
+        setProgress
+      );
+
+      await removeRecording(recording.session.id).catch(() => {});
+
+      setSaved(null);
+      setPhase("ended");
+
+      router.push(`/i/${reviewId}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setPhase("retry");
+    } finally {
+      busy.current = false;
+    }
   }
 
-  function addQuestion() {
-    if (!draft.trim()) return;
-    setQuestions((q) => [...q, { id: uid(), text: draft.trim(), active: false }]);
-    setDraft("");
+  async function finish(reason?: string) {
+    if (ending.current) {
+      return;
+    }
+
+    ending.current = true;
+
+    if (reason) {
+      setNotice(reason);
+    }
+
+    setPhase("saving");
+    busy.current = true;
+
+    const recording = recorder.current;
+    recorder.current = null;
+
+    try {
+      const blob = recording ? await recording.stop() : null;
+
+      screen.current?.getTracks().forEach((track) => track.stop());
+      screen.current = null;
+
+      call.current?.leave();
+      call.current = null;
+
+      source.current?.getTracks().forEach((track) => track.stop());
+      source.current = null;
+
+      setSharing(null);
+      setLocal(null);
+      setRemote(emptyTracks);
+      setConnected(false);
+
+      if (recording && blob) {
+        const result = {
+          session: recording.session,
+          blob,
+        };
+
+        setSaved(result);
+
+        await upload(result);
+      } else {
+        setPhase("ended");
+      }
+    } catch (e) {
+      setError((e as Error).message);
+      setPhase("retry");
+    } finally {
+      busy.current = false;
+    }
   }
 
-  function startQuestion(qid: string) {
-    setQuestions((qs) => qs.map((q) => ({ ...q, active: q.id === qid })));
-    setAskNow(false);
-    const q = questions.find((x) => x.id === qid);
-    if (q) logQuestion(id, { id: qid, text: q.text, started_at: new Date().toISOString() }).catch(() => {});
+  useEffect(() => {
+    finishRef.current = finish;
+  });
+
+  async function join() {
+    if (busy.current || !loaded) {
+      return;
+    }
+
+    busy.current = true;
+    ending.current = false;
+
+    setPhase("joining");
+    setError("");
+
+    let c: LiveCall | null = null;
+    let r: InterviewRecorder | null = null;
+
+    try {
+      const config = await getLiveConfig();
+
+      if (!mounted.current) {
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      if (!mounted.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      source.current = stream;
+
+      setLocal(stream.getVideoTracks()[0]);
+      setMicOn(true);
+      setCameraOn(true);
+
+      c = new LiveCall(
+        stream,
+        role,
+        config.iceServers,
+        () => {
+          if (!mounted.current || !c) {
+            return;
+          }
+
+          setRemote({ ...c.remote });
+          setConnected(c.connected);
+        },
+        (reason) => {
+          if (mounted.current && !ending.current) {
+            void finishRef.current(reason);
+          }
+        }
+      );
+
+      call.current = c;
+
+      if (role === "host") {
+        r = new InterviewRecorder(
+          id,
+          () => ({
+            local: stream,
+            remoteCamera: c!.remote.camera,
+            remoteAudio: c!.remote.audio,
+            screen:
+              screen.current?.getVideoTracks()[0] ??
+              c!.remote.screen,
+          }),
+          setError
+        );
+
+        await r.start();
+
+        recorder.current = r;
+      }
+
+      await c.join(id);
+
+      if (!mounted.current) {
+        await r?.stop();
+        c.leave();
+        return;
+      }
+
+      if (!ending.current) {
+        setPhase("live");
+
+        setNotice(
+          role === "host"
+            ? "Recording is on. End the interview to save it and create a review."
+            : "This interview is being recorded by the interviewer for review."
+        );
+      }
+    } catch (e) {
+      setError((e as Error).message);
+
+      if (r) {
+        const blob = await r.stop();
+
+        recorder.current = null;
+
+        if (blob.size) {
+          setSaved({
+            session: r.session,
+            blob,
+          });
+
+          setPhase("retry");
+        } else {
+          await removeRecording(r.session.id).catch(() => {});
+          setPhase("idle");
+        }
+      } else {
+        setPhase("idle");
+      }
+
+      c?.leave();
+      call.current = null;
+
+      source.current?.getTracks().forEach((track) => track.stop());
+      source.current = null;
+    } finally {
+      busy.current = false;
+    }
   }
 
-  function endQuestion(qid: string) {
-    setQuestions((qs) => qs.map((q) => (q.id === qid ? { ...q, active: false } : q)));
-    logQuestion(id, { id: qid, ended_at: new Date().toISOString() }).catch(() => {});
+  async function stopShare() {
+    screen.current?.getTracks().forEach((track) => track.stop());
+
+    screen.current = null;
+
+    setSharing(null);
+
+    await call.current?.share(null).catch(() => {});
   }
 
-  const btn = "rounded-md px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40";
+  async function startShare() {
+    if (sharePending || screen.current) {
+      return;
+    }
+
+    setSharePending(true);
+    setError("");
+
+    try {
+      const captured = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      if (!mounted.current || ending.current || !call.current) {
+        captured.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      screen.current = captured;
+
+      const track = captured.getVideoTracks()[0];
+
+      track.onended = () => {
+        void stopShare();
+      };
+
+      await call.current.share(track);
+
+      setSharing(track);
+    } catch (e) {
+      await stopShare();
+      setError((e as Error).message);
+    } finally {
+      setSharePending(false);
+    }
+  }
+
+  const button =
+    "rounded-md border border-border px-4 py-2 text-sm font-medium disabled:opacity-40";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href={`/i/${id}`} className="text-xs text-muted hover:underline">
-          ← Review
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Live interview</h1>
-        <p className="mt-1 text-sm text-muted">
-          Canary use requires the candidate to have consented to measures that detect unauthorized real-time
-          assistance. A triggered marker is one signal, never proof on its own.
-        </p>
+    <div className="space-y-5">
+      {phase !== "live" &&
+        phase !== "joining" &&
+        phase !== "saving" && (
+          <Link href="/live" className="text-sm text-accent">
+            ← Live interviews
+          </Link>
+        )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Live interview</h1>
+
+        <span role="status" className="text-sm text-muted">
+          {phase === "live"
+            ? `${
+                role === "host" ? "● Recording · " : ""
+              }${
+                connected
+                  ? "Connected"
+                  : "Waiting for the other participant"
+              }`
+            : phase === "saving"
+              ? `Saving recording… ${Math.round(progress * 100)}%`
+              : phase === "joining"
+                ? "Connecting…"
+                : ""}
+        </span>
       </div>
 
-      {error && <p className="rounded-md border border-danger/40 bg-surface p-4 text-sm text-danger">{error}</p>}
+      {error && (
+        <p
+          role="alert"
+          className="rounded border border-danger/40 p-3 text-sm text-danger"
+        >
+          {error}
+        </p>
+      )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <VideoTile videoTrack={localVideo} label="You (recruiter)" muted />
-            {remotes.length ? (
-              remotes.map((r) => <VideoTile key={r.sessionId} videoTrack={r.videoTrack} audioTrack={r.audioTrack} label="Candidate" />)
-            ) : (
-              <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-border text-xs text-muted">
-                Waiting for candidate
-              </div>
-            )}
+      {notice && (
+        <p className="text-sm text-muted">
+          {notice}
+        </p>
+      )}
+
+      {role === "host" && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4">
+          <p className="flex-1 text-sm">
+            Invite the candidate to this room. Both of you stay inside
+            this app.
+          </p>
+
+          <button
+            className={button}
+            onClick={async () => {
+              const link = `${window.location.origin}/live/${id}?role=candidate`;
+
+              try {
+                await navigator.clipboard.writeText(link);
+
+                setNotice(
+                  "Invitation link copied. Send it to the candidate."
+                );
+              } catch {
+                setNotice(`Invitation link: ${link}`);
+              }
+            }}
+          >
+            Copy invitation link
+          </button>
+        </div>
+      )}
+
+      {(phase === "idle" || phase === "ended") && (
+        <section className="space-y-4 rounded-lg border border-border bg-surface p-5">
+          <p className="text-sm">
+            Your camera, microphone, and any shared screen will be
+            recorded for automated interview review.
+          </p>
+
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+            />
+
+            {role === "host"
+              ? "I confirm all participants consent to recording and automated review."
+              : "I consent to recording and automated review of this interview."}
+          </label>
+
+          <button
+            disabled={!consent || !loaded || phase === "ended"}
+            onClick={join}
+            className={`${button} bg-accent text-accent-fg`}
+          >
+            {role === "host"
+              ? "Start recorded interview"
+              : "Join interview"}
+          </button>
+
+          {phase === "ended" && (
+            <p className="text-sm">
+              This interview has ended.
+            </p>
+          )}
+        </section>
+      )}
+
+      {(phase === "live" || phase === "joining") && (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <VideoTile
+              videoTrack={cameraOn ? local : null}
+              label={
+                role === "host"
+                  ? "You · interviewer"
+                  : "You · candidate"
+              }
+              muted
+            />
+
+            <VideoTile
+              videoTrack={remote.camera}
+              audioTrack={remote.audio}
+              label={
+                role === "host"
+                  ? "Candidate"
+                  : "Interviewer"
+              }
+            />
           </div>
 
-          {!connected ? (
-            <div className="flex flex-wrap items-center gap-3">
-              {!armed && (
-                <button onClick={arm} className={`${btn} border border-border`}>
-                  Enable microphone (test without a call)
-                </button>
-              )}
-              <button onClick={connect} className={`${btn} bg-accent text-accent-fg`}>
-                Join call
-              </button>
-              <label className="flex items-center gap-2 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  checked={audibleDev}
-                  onChange={(e) => {
-                    setAudibleDev(e.target.checked);
-                    if (mixer.current) mixer.current.audibleDevMode = e.target.checked;
-                  }}
-                  className="size-4 accent-(--accent)"
-                />
-                Audible dev mode (prove it transmits before lowering the level)
-              </label>
-              {armed && <span className="text-xs text-accent">Mic armed — Preview and gain work now.</span>}
-            </div>
-          ) : (
-            <p className="text-xs text-muted">Connected. Your microphone is live and uninterrupted.</p>
+          {(sharing || remote.screen) && (
+            <VideoTile
+              videoTrack={sharing ?? remote.screen}
+              label={
+                sharing
+                  ? "Your shared screen"
+                  : "Shared screen"
+              }
+              muted
+              contain
+            />
           )}
 
-          <section className="rounded-lg border border-border bg-surface p-4">
-            <h2 className="text-sm font-semibold">Questions</h2>
-            <div className="mt-3 flex gap-2">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addQuestion()}
-                placeholder="Add a question…"
-                className="flex-1 rounded-md border border-border bg-bg px-3 py-2 text-sm"
-              />
-              <button onClick={addQuestion} className={`${btn} border border-border`}>
-                Add
-              </button>
-            </div>
-            <ul className="mt-3 space-y-2">
-              {questions.map((q) => (
-                <li key={q.id} className={`rounded-md border p-3 text-sm ${q.active ? "border-accent" : "border-border"}`}>
-                  <p>{q.text}</p>
-                  <div className="mt-2 flex gap-2">
-                    {q.active ? (
-                      <button onClick={() => endQuestion(q.id)} className={`${btn} border border-border text-xs`}>
-                        End question
-                      </button>
-                    ) : (
-                      <button onClick={() => startQuestion(q.id)} className={`${btn} border border-border text-xs`}>
-                        Start question
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-              {questions.length === 0 && <li className="text-sm text-muted">No questions yet.</li>}
-            </ul>
-            <p className="mt-2 text-xs text-muted">You ask each question yourself; the app never speaks it.</p>
-          </section>
-        </div>
-
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-border bg-surface p-4">
-            <h2 className="text-sm font-semibold">Canary</h2>
-            <select
-              value={selected?.id ?? ""}
-              onChange={(e) => {
-                const c = canaries.find((x) => x.id === e.target.value);
-                if (c) selectCanary(c);
-              }}
-              className="mt-3 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm"
-            >
-              <option value="" disabled>
-                Select a canary…
-              </option>
-              {canaries.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.id} — “{c.expectedMarker}”
-                </option>
-              ))}
-            </select>
-
-            {selected && (
-              <p className="mt-2 text-xs text-muted">
-                “{selected.instruction}” · {selected.durationMs} ms ·{" "}
-                <span className={status === "ready" || status === "sent" ? "text-accent" : ""}>
-                  {status === "loading" ? "preloading…" : status === "idle" ? "not preloaded" : status.toUpperCase()}
-                </span>
-              </p>
-            )}
-
-            <label className="mt-4 block text-xs font-medium">
-              Injection level: {gainDb} dB
-              <input
-                type="range"
-                min={-48}
-                max={0}
-                step={1}
-                value={gainDb}
-                onChange={(e) => setGainDb(Number(e.target.value))}
-                className="mt-1 w-full accent-(--accent)"
-              />
-              <span className="text-muted">Start audible (near 0 dB), then lower once you confirm it transmits.</span>
-            </label>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button onClick={preview} disabled={status !== "ready" && status !== "sent"} className={`${btn} border border-border`}>
-                Preview (local)
-              </button>
-              <button onClick={() => send(false)} disabled={!connected || status !== "ready"} className={`${btn} bg-accent text-accent-fg`}>
-                Send canary
-              </button>
+          {phase === "live" && (
+            <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => send(true)}
-                disabled={!connected || status !== "ready"}
-                className={`${btn} col-span-2 border border-accent text-accent`}
+                className={button}
+                onClick={() => {
+                  source.current
+                    ?.getAudioTracks()
+                    .forEach((track) => {
+                      track.enabled = !micOn;
+                    });
+
+                  setMicOn(!micOn);
+                }}
               >
-                Send + Ask
+                {micOn
+                  ? "Mute microphone"
+                  : "Unmute microphone"}
+              </button>
+
+              <button
+                className={button}
+                onClick={() => {
+                  source.current
+                    ?.getVideoTracks()
+                    .forEach((track) => {
+                      track.enabled = !cameraOn;
+                    });
+
+                  setCameraOn(!cameraOn);
+                }}
+              >
+                {cameraOn
+                  ? "Turn camera off"
+                  : "Turn camera on"}
+              </button>
+
+              <button
+                disabled={sharePending}
+                className={button}
+                onClick={
+                  sharing
+                    ? stopShare
+                    : startShare
+                }
+              >
+                {sharePending
+                  ? "Choosing screen…"
+                  : sharing
+                    ? "Stop sharing"
+                    : "Share screen"}
+              </button>
+
+              <button
+                className={`${button} bg-accent text-accent-fg`}
+                onClick={() => finish()}
+              >
+                {role === "host"
+                  ? "End interview & create review"
+                  : "Leave interview"}
               </button>
             </div>
+          )}
+        </>
+      )}
 
-            {status === "sending" && <p className="mt-3 text-sm">Canary: SENDING…</p>}
-            {askNow && (
-              <p className="mt-3 rounded-md bg-mark px-3 py-2 text-sm font-semibold text-mark-text">✓ Sent — ASK QUESTION NOW</p>
+      {saved && (
+        <section className="space-y-3 rounded-lg border border-border bg-surface p-4">
+          <h2 className="font-semibold">
+            Your recording
+          </h2>
+
+          <p className="text-sm text-muted">
+            Keep this tab open until saving finishes. A recovery copy
+            is kept in this browser until the server accepts the
+            recording.
+          </p>
+
+          {!!saved.blob.size && (
+            <RecordingPreview
+              blob={saved.blob}
+              id={id}
+            />
+          )}
+
+          <div className="flex gap-3">
+            <button
+              disabled={
+                phase === "saving" ||
+                !saved.blob.size
+              }
+              className={button}
+              onClick={() => upload(saved)}
+            >
+              Retry saving review
+            </button>
+
+            {!saved.blob.size && (
+              <button
+                className={button}
+                onClick={async () => {
+                  await removeRecording(
+                    saved.session.id
+                  );
+
+                  setSaved(null);
+                  setPhase("idle");
+                }}
+              >
+                Clear empty recording
+              </button>
             )}
-            <p className="mt-3 text-xs text-muted">Preview plays to you only. Send mixes it into the outgoing audio; your mic is not interrupted.</p>
-          </section>
-        </aside>
-      </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function RecordingPreview({
+  blob,
+  id,
+}: {
+  blob: Blob;
+  id: string;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const link = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    const url = URL.createObjectURL(blob);
+
+    if (video.current) {
+      video.current.src = url;
+    }
+
+    if (link.current) {
+      link.current.href = url;
+    }
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [blob]);
+
+  return (
+    <div className="space-y-2">
+      <video
+        ref={video}
+        controls
+        className="max-h-80 w-full rounded bg-black"
+      />
+
+      <a
+        ref={link}
+        className="inline-block text-sm underline"
+        download={`interview-${id}.${
+          blob.type.includes("mp4")
+            ? "mp4"
+            : "webm"
+        }`}
+      >
+        Download recording
+      </a>
     </div>
   );
 }
