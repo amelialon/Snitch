@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { clock, listInterviews } from "@/lib/api";
+import { clock, deleteInterview, listInterviews } from "@/lib/api";
 import type { Interview } from "@/lib/types";
 
 type Filter = "all" | "week" | "moments" | "processing";
@@ -41,6 +41,20 @@ export default function InterviewList() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function remove(interview: Interview) {
+    if (!confirm(`Delete ${interview.candidate_label} and everything recorded for them? This cannot be undone.`)) return;
+    setDeleting(interview.id);
+    try {
+      await deleteInterview(interview.id);
+      setInterviews((prev) => prev?.filter((i) => i.id !== interview.id) ?? prev);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   useEffect(() => {
     let stop = false;
@@ -120,19 +134,30 @@ export default function InterviewList() {
 
       {shown.map((interview) => {
         const m = moments(interview);
+        const busy = deleting === interview.id;
         return (
-          <Link
-            key={interview.id}
-            href={`/${interview.stage === "live" ? "live" : "i"}/${interview.id}`}
-            className="group grid grid-cols-[minmax(0,1fr)_170px_100px_150px] items-center gap-6 border-t border-border py-[18px]"
-          >
-            <div className="truncate text-[15.5px] font-medium transition-colors group-hover:text-accent">{interview.candidate_label}</div>
-            <div className="font-mono text-[13px] text-muted">
-              {new Date(interview.created_at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-            </div>
-            <div className="font-mono text-[13px] text-muted">{interview.summary.duration_sec ? clock(interview.summary.duration_sec) : ""}</div>
-            <div className={m.strong ? "text-[14.5px] font-medium text-accent" : "text-sm text-muted"}>{m.text}</div>
-          </Link>
+          <div key={interview.id} className={`group relative border-t border-border transition-opacity ${busy ? "opacity-40" : ""}`}>
+            <Link
+              href={`/${interview.stage === "live" ? "live" : "i"}/${interview.id}`}
+              className="grid grid-cols-[minmax(0,1fr)_170px_100px_150px] items-center gap-6 py-[18px] pr-20"
+            >
+              <div className="truncate text-[15.5px] font-medium transition-colors group-hover:text-accent">{interview.candidate_label}</div>
+              <div className="font-mono text-[13px] text-muted">
+                {new Date(interview.created_at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div className="font-mono text-[13px] text-muted">{interview.summary.duration_sec ? clock(interview.summary.duration_sec) : ""}</div>
+              <div className={m.strong ? "text-[14.5px] font-medium text-accent" : "text-sm text-muted"}>{m.text}</div>
+            </Link>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => remove(interview)}
+              aria-label={`Delete ${interview.candidate_label}`}
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-md px-2.5 py-1.5 text-[13px] text-muted opacity-0 transition-[opacity,color] duration-150 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+            >
+              {busy ? "Deleting…" : "Delete"}
+            </button>
+          </div>
         );
       })}
       {!!interviews?.length && <div className="border-t border-border" />}

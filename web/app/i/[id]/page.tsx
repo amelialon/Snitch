@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clock,
@@ -21,6 +21,7 @@ import { TranscriptPane, type HighlightSpan } from "@/components/transcript-pane
 
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [interview, setInterview] = useState<Interview | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [transcript, setTranscript] = useState<Transcript | null>(null);
@@ -119,7 +120,8 @@ export default function ReviewPage() {
           </button>
           <button
             onClick={() => {
-              if (confirm("Delete this interview and its files?")) deleteInterview(id).then(() => (location.href = "/"));
+              if (confirm(`Delete ${interview.candidate_label} and everything recorded for them? This cannot be undone.`))
+                deleteInterview(id).then(() => router.push("/")).catch((e: Error) => setError(e.message));
             }}
             className={`${ghost} text-danger`}
           >
