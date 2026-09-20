@@ -45,6 +45,9 @@ export default function NewReview() {
   }
 
   const busy = progress !== null;
+  // The progress bar measures browser → API only. At 100% the API is still copying the recording
+  // into storage, which can take minutes on a slow network, so say that instead of a stuck "100%".
+  const storing = progress !== null && progress >= 1;
   const field = "mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm";
   const file =
     "mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-text";
@@ -121,9 +124,12 @@ export default function NewReview() {
           disabled={!consent || busy}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {busy ? `Uploading… ${Math.round((progress ?? 0) * 100)}%` : "Upload and review"}
+          {storing ? "Storing recording…" : busy ? `Uploading… ${Math.round((progress ?? 0) * 100)}%` : "Upload and review"}
         </button>
         {!consent && <span className="text-xs text-muted">Consent is required before anything is uploaded.</span>}
+        {storing && (
+          <span className="text-xs text-muted">Received. Saving the recording to storage can take a few minutes on a slow connection — keep this tab open.</span>
+        )}
       </div>
     </form>
   );
