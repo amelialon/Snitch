@@ -135,6 +135,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             consent=Consent(attested_by=attested_by.strip(), attested_at=datetime.now(timezone.utc)),
             files=names,
             fingerprints={role: _sha256(upload.file) for role, (upload, _) in uploads.items()},
+            stage="uploading to storage",  # can take minutes on a slow link; the pipeline sets the next stage
         )
         cached = _cached_source(interview)
         exact = cached is not None and cached.fingerprints == interview.fingerprints and cached.context_flags == interview.context_flags
