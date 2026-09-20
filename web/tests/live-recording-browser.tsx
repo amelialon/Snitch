@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LiveCall } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
+import { ScreenOverlay } from "@/lib/screen-overlay";
 import { recoverRecording, removeRecording } from "@/lib/recording-store";
 
 const API = "http://localhost:8001";
@@ -23,6 +24,7 @@ export function LiveRecordingTest() {
     const timers: ReturnType<typeof setInterval>[] = [];
     const sources: MediaStream[] = [];
     let host: LiveCall | undefined, candidate: LiveCall | undefined, recording: InterviewRecorder | undefined;
+    let overlay: ScreenOverlay | undefined;
     try {
       await audio.resume();
       const synthetic = (color: string, label: string, frequency: number) => {
@@ -37,7 +39,7 @@ export function LiveRecordingTest() {
       };
       const local = synthetic("#ae2637", "Synthetic interviewer", 440);
       const remote = synthetic("#2457ab", "Synthetic candidate", 660);
-      const shared = synthetic("#287742", "Shared screen · no watermark", 880);
+      const shared = synthetic("#287742", "Shared screen", 880);
       const response = await fetch(`${API}/live-interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ candidate_label: "Browser recording test", attested_by: "Synthetic test", consent_attested: true }) });
       if (!response.ok) throw new Error("Start backend/tests/dev_live_server.py first.");
       const room = (await response.json()).id;
@@ -50,11 +52,18 @@ export function LiveRecordingTest() {
       while ((!host.connected || !candidate.connected) && Date.now() < deadline) { if (callError) throw new Error(callError); await pause(100); }
       if (!host.connected || !candidate.connected) throw new Error("Local WebRTC peers did not connect.");
       append("PASS: two in-app WebRTC peers connected; no Daily room");
-      await host.share(shared.getVideoTracks()[0]);
+      overlay = new ScreenOverlay(new MediaStream(shared.getVideoTracks()), () => {});
+      if (overlay.marker) throw new Error("Marker activated before frames arrived.");
+      const composited = await overlay.start();
+      const marker = overlay.marker!;
+      const persisted = await fetch(`${API}/interviews/${room}/screen-shares/${marker.sharing_session_id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(marker) });
+      if (!persisted.ok) throw new Error(`Watermark persistence failed: ${persisted.status}`);
+      await host.share(composited.getVideoTracks()[0]);
       await pause(1000);
       if (!candidate.remote.screen || !host.remote.audio || !host.remote.camera) throw new Error(`Missing tracks: candidate screen=${!!candidate.remote.screen}, host audio=${!!host.remote.audio}, host camera=${!!host.remote.camera}`);
       append("PASS: camera, audio and separate screen tracks arrived");
-      recording = new InterviewRecorder(room, () => ({ local, remoteCamera: host!.remote.camera, remoteAudio: host!.remote.audio, screen: shared.getVideoTracks()[0] }), message => { callError = message; });
+      // Record the RECEIVED screen to exercise WebRTC encoding before recording encoding.
+      recording = new InterviewRecorder(room, () => ({ local, remoteCamera: host!.remote.camera, remoteAudio: host!.remote.audio, screen: candidate!.remote.screen }), message => { callError = message; });
       await recording.start(); await pause(3800);
       const blob = await recording.stop();
       if (callError) throw new Error(callError);
@@ -72,6 +81,12 @@ export function LiveRecordingTest() {
       const blue = ctx.getImageData(1100, 540, 1, 1).data;
       if (!(green[1] > green[0] && red[0] > red[1] && blue[2] > blue[0])) throw new Error("Recording is missing a screen/camera tile.");
       append("PASS: decoded recording contains shared screen and both cameras");
+      const band = ctx.getImageData(9, 99, 310, 24).data;
+      const background = ctx.getImageData(400, 110, 1, 1).data;
+      let markedPixels = 0;
+      for (let i = 0; i < band.length; i += 4) if (band[i] - background[0] > 10 && band[i + 1] - background[1] > 10) markedPixels++;
+      if (markedPixels < 70) throw new Error(`Visual watermark missing after WebRTC and recording encoding: ${markedPixels} pixels`);
+      append(`PASS: visual watermark survives WebRTC and recording encoding (${markedPixels} text pixels); ${marker.expected_marker}`);
       const decodedAudio = await audio.decodeAudioData(await blob.arrayBuffer());
       const pcm = decodedAudio.getChannelData(0), start = Math.floor(decodedAudio.sampleRate), n = Math.min(8192, pcm.length - start);
       const magnitude = (hz: number) => {
@@ -82,6 +97,8 @@ export function LiveRecordingTest() {
       if (magnitude(440) < .005 || magnitude(660) < .005) throw new Error(`Audio tone amplitudes: interviewer=${magnitude(440).toFixed(5)}, candidate=${magnitude(660).toFixed(5)}, duration=${decodedAudio.duration.toFixed(2)}s`);
       append("PASS: both participants' audio tones recovered from encoded video");
       await host.share(null); await pause(200);
+      overlay.stop();
+      if (composited.getVideoTracks()[0].readyState !== "ended") throw new Error("Overlay track still running after stop.");
       if (candidate.remote.screen) throw new Error("Remote screen did not clear after stopping sharing.");
       const form = new FormData(); form.append("recording_id", recording.session.id); form.append("consent_attested", "true"); form.append("recording", blob, "interview.webm");
       const uploaded = await fetch(`${API}/live-interviews/${room}/recording`, { method: "POST", body: form });
@@ -101,7 +118,7 @@ export function LiveRecordingTest() {
       append("ALL CHECKS PASSED (synthetic transcription; no vendor calls)");
     } catch (e) { setError((e as Error).message); }
     finally {
-      await recording?.stop(); host?.leave(); candidate?.leave(); sources.forEach(s => s.getTracks().forEach(t => t.stop())); timers.forEach(clearInterval); await audio.close(); setRunning(false);
+      await recording?.stop(); overlay?.stop(); host?.leave(); candidate?.leave(); sources.forEach(s => s.getTracks().forEach(t => t.stop())); timers.forEach(clearInterval); await audio.close(); setRunning(false);
     }
   }
   return <div className="space-y-4"><h1 className="text-2xl font-semibold">Development: live recording integration test</h1>

@@ -1,4 +1,11 @@
 import type { Interview, Report, Transcript } from "./types";
+import type { VisualMarker } from "./screen-overlay";
+
+export const saveVisualMarker = (id: string, marker: VisualMarker) => request<{ ok: boolean }>(
+  `/interviews/${id}/screen-shares/${marker.sharing_session_id}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(marker), keepalive: true,
+  },
+);
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined"
   ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000");
