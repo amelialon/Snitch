@@ -146,6 +146,7 @@ def test_the_same_recording_uploaded_again_reuses_the_earlier_review(tmp_path):
     assert second["status"] == "ready" and second["id"] != first["id"]
     assert client.get(f"/interviews/{second['id']}").json()["report"] == client.get(f"/interviews/{first['id']}").json()["report"]
     assert client.get(f"/interviews/{second['id']}/transcript").json()["words"]
+    assert client.get(f"/interviews/{second['id']}/media").content == transcript_json()  # the recording came along too
 
 
 def test_a_different_recording_is_not_served_from_the_cache(client):
