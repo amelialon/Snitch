@@ -204,9 +204,6 @@ backend/
 web/
   app/               /, /new, /i/[id], /live/[id]
   components/  lib/
-zoom-app/            Zoom App: canary injection inside a Zoom meeting (§11)
-  server.js          headers, OAuth install, /api proxy, static
-  public/            app.js, index.html, styles.css
 firebase/            deny-all rules
 ```
 
@@ -238,7 +235,7 @@ Rule: nothing under `review.py`/`pipeline.py` imports `api.py`. The CLI and the 
 | Prosody signals (audio), gaze signals (video, quality-gated) | Phase 2 |
 | Eval harness + per-group false-positive gate over a labeled dataset | Before any signal is trusted in production |
 | Live two-person interview room + outgoing-audio mix | Phase 3, after the video-SDK decision (§11) and lab validation |
-| Zoom mic-path audio (meeting bot or virtual device) | Only if share-audio survival (§11 Zoom App) fails validation |
+| Canary delivery inside Zoom (app, bot, or virtual device) | Only if interviews must happen on Zoom rather than in the in-app room (§11) |
 
 ## 11. Live canary (Phase 3, partially built)
 
@@ -278,27 +275,12 @@ candidate hears mic + canary near 0 dB, then lower the gain. The source buffer s
 is applied only at send. The mic is never interrupted. Needs `NEXT_PUBLIC_DAILY_ROOM_URL`; without
 it the room shows a config notice.
 
-**Zoom App (built, `zoom-app/`).** A second delivery surface for the same canaries, for
-interviews that happen on Zoom rather than in our Daily room. It runs inside the Zoom client's
-meeting sidebar (Zoom Apps SDK via `https://appssdk.zoom.us/sdk.js`), fronted by a small Express
-server that adds Zoom's required security headers, handles the one-time OAuth install, and
-proxies `/api/*` to the backend's §5 session endpoints so the page stays same-origin.
-
-| Channel | Mechanism | `delivery_method` |
-|---|---|---|
-| Visual | Layers API camera mode: `runRenderingContext({view:"camera"})`, `drawParticipant` (self) then `drawImage` of a transparent text strip at a chosen opacity/size/position for N seconds, then `clearImage`. Alters only the recruiter's **outgoing** video. | `zoom-camera-overlay` |
-| Audio | The Zoom Apps SDK cannot replace or mix the mic track. The canary is played (gain applied at playback) through `shareApp({action:"start", withSound:true})` — the page swaps to a candidate-safe "question slide" while shared — or `shareComputerAudio()`. | `zoom-share-app-sound`, `zoom-computer-audio` |
-
-`CanaryEvent` gained `channel` (`audio`/`visual`), `platform`, and `overlay_opacity` so the two
-surfaces log comparably; Daily-room events now carry `platform: "daily"`. The consent gate is
-the same: no interview + §6 attestation + loaded canary, no send.
-
-Open question 5 (bot vs. virtual device) is narrowed, not closed: for a true mic-path mix on
-Zoom the choices remain a Meeting-SDK bot or a virtual audio device; the Zoom App gives the
-visual channel cleanly and an audio channel via share audio only.
+**Zoom App (removed).** A Zoom Apps SDK sidebar app delivered the same canaries inside Zoom
+meetings (camera-overlay visual channel, share-audio audio channel). It was dropped once the
+in-app interview room covered delivery; the code is in history (commit `0f6471a`) if a Zoom
+surface is needed again. `CanaryEvent` keeps `channel`, `platform`, and `overlay_opacity` so
+any future surface logs comparably.
 
 **Still to do:** recording the interviewer's clean mic *separately* from the canary-mixed
 outgoing track (so forensic transcription never runs on contaminated audio) — Daily's raw-tracks /
-recording hooks, not yet wired. Semantic marker matching (currently whole-word). For the Zoom
-app: decrypt the `X-Zoom-App-Context` header, and measure share-audio survival separately from
-the Daily mix (SPEC §6 validation 1).
+recording hooks, not yet wired. Semantic marker matching (currently whole-word).

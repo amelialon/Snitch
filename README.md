@@ -110,8 +110,6 @@ cd web && npx tsc --noEmit
 - `backend/` — the pipeline and API. `review.py` is the pure core that decides flags;
   `adapters/` holds the vendor and storage implementations behind `ports.py`.
 - `web/` — Next.js app: upload, live progress, and the review page.
-- `zoom-app/` — Zoom App that injects a canary (visual on your camera, audio via share) inside a
-  Zoom meeting and logs it to the backend. See [zoom-app/README.md](zoom-app/README.md).
 - `firebase/` — deny-all security rules for the no-auth demo.
 
 ## Status
@@ -119,7 +117,5 @@ cd web && npx tsc --noEmit
 Working: upload → transcribe → segment → baseline → timing/delivery/content signals → fusion →
 report, with CV consistency and reviewer feedback. In-app WebRTC interviews with screen sharing,
 browser recording/recovery, and automatic upload into the review pipeline.
-Zoom App (`zoom-app/`) with the canaries: visual overlay on the outgoing camera (Layers API)
-and audio via app-share-with-sound; needs a Marketplace app + ngrok (see its README).
 Gaze/prosody signals, separate clean-mic recording, and the bias eval set are post-demo
 (architecture.md §10–§11).
