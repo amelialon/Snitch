@@ -115,7 +115,7 @@ export default function InterviewList() {
         />
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_170px_100px_150px] gap-6 py-3 text-[12.5px] text-muted">
+      <div className="grid grid-cols-[minmax(0,1fr)_170px_100px_150px] gap-6 py-3 pr-20 text-[12.5px] text-muted">
         <div>Candidate</div>
         <div>Interviewed</div>
         <div>Length</div>
