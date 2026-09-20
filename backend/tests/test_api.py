@@ -123,3 +123,36 @@ def test_unsupported_recording_types_are_refused(client):
     )
 
     assert response.status_code == 400
+
+
+def test_the_same_recording_uploaded_again_reuses_the_earlier_review(tmp_path):
+    class CountingTranscriber(JsonTranscriber):
+        calls = 0
+
+        def transcribe(self, path):
+            CountingTranscriber.calls += 1
+            return super().transcribe(path)
+
+    deps = Deps(store=LocalStore(tmp_path), transcriber=CountingTranscriber(), analyst=HeuristicAnalyst(), detector=MarkerDetector())
+    client = TestClient(create_app(deps))
+    data = {"candidate_label": "Candidate A", "consent_attested": "true", "attested_by": "recruiter@example.com"}
+    first = client.post("/interviews", data=data, files={"recording": ("take-1.json", transcript_json(), "application/json")}).json()
+
+    second = client.post("/interviews", data=data, files={"recording": ("renamed copy.json", transcript_json(), "application/json")}).json()
+
+    assert CountingTranscriber.calls == 1
+    assert second["status"] == "ready" and second["id"] != first["id"]
+    assert client.get(f"/interviews/{second['id']}").json()["report"] == client.get(f"/interviews/{first['id']}").json()["report"]
+    assert client.get(f"/interviews/{second['id']}/transcript").json()["words"]
+
+
+def test_a_different_recording_is_not_served_from_the_cache(client):
+    submit(client)
+    other = InterviewBuilder()
+    other.ask(natural(80), question="Tell me about yourself.")
+    files = {"recording": ("interview.json", other.build()[0].model_dump_json().encode(), "application/json")}
+    data = {"candidate_label": "Candidate B", "consent_attested": "true", "attested_by": "recruiter@example.com"}
+
+    created = client.post("/interviews", data=data, files=files).json()
+
+    assert client.get(f"/interviews/{created['id']}").json()["report"]["flags"] == []

@@ -224,6 +224,7 @@ class Interview(BaseModel):
     context_flags: dict[str, bool] = Field(default_factory=dict)
     consent: Consent
     files: dict[str, str] = Field(default_factory=dict)  # role -> stored file name
+    fingerprints: dict[str, str] = Field(default_factory=dict)  # role -> sha256 of the uploaded bytes
     summary: dict[str, float | int | str] = Field(default_factory=dict)
     feedback: dict[str, Feedback] = Field(default_factory=dict)
     error: str | None = None

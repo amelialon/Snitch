@@ -1,0 +1,9 @@
+{
+  "name": "interview-cheater",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:api & npm run dev:web; wait",
+    "dev:api": "backend/.venv/bin/python -m interview_review.cli serve",
+    "dev:web": "cd web && npm run dev"
+  }
+}
