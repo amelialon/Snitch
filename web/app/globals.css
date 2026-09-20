@@ -131,3 +131,47 @@ h1 {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Mark loader: wind-up, one orbit, snap into the square, hold, repeat. ~1.9 s per cycle. */
+.mark-loader .brackets,
+.mark-loader .ticks,
+.mark-loader .dot {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+.mark-loader .brackets {
+  animation: mark-spin 1.9s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+.mark-loader .ticks {
+  animation: mark-ticks 1.9s ease-in-out infinite;
+}
+.mark-loader .dot {
+  animation: mark-dot 1.9s cubic-bezier(0.23, 1, 0.32, 1) infinite;
+}
+@keyframes mark-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  14% { transform: rotate(-14deg) scale(1.05); }   /* anticipation: a small wind-up the other way */
+  62% { transform: rotate(360deg) scale(1.14); }   /* the orbit, opened up */
+  78%, 100% { transform: rotate(360deg) scale(1); } /* snap into the square and hold */
+}
+@keyframes mark-ticks {
+  0%, 12% { opacity: 1; }
+  22%, 64% { opacity: 0; }                          /* the ticks leave during the orbit */
+  78%, 100% { opacity: 1; }                         /* and return on the lock */
+}
+@keyframes mark-dot {
+  0%, 60% { transform: scale(1); }
+  70% { transform: scale(0.82); }                   /* the lock: a quick press */
+  84%, 100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mark-loader .brackets,
+  .mark-loader .ticks,
+  .mark-loader .dot {
+    animation: mark-breathe 1.8s ease-in-out infinite;
+  }
+  @keyframes mark-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+}

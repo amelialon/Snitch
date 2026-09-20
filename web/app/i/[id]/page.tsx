@@ -15,6 +15,7 @@ import {
 import type { Interview, Report, Transcript } from "@/lib/types";
 import { AnalysisBoxes, type HighlightMode } from "@/components/analysis-boxes";
 import { FlagCard } from "@/components/flag-card";
+import { MarkLoader } from "@/components/mark-loader";
 import { Timeline } from "@/components/timeline";
 import { TranscriptPane, type HighlightSpan } from "@/components/transcript-pane";
 
@@ -128,13 +129,7 @@ export default function ReviewPage() {
       </header>
 
       {interview.status === "processing" && (
-        <div className="py-6">
-          <p className="text-[15px] font-medium capitalize">{interview.stage}…</p>
-          <div className="mt-3 h-[3px] max-w-md overflow-hidden rounded-sm bg-border">
-            <div className="h-full bg-accent transition-all" style={{ width: `${Math.round(interview.progress * 100)}%` }} />
-          </div>
-          <p className="mt-2 text-[13px] text-muted">This page updates on its own.</p>
-        </div>
+        <MarkLoader label={interview.stage} detail="This page updates on its own." />
       )}
 
       {interview.status === "failed" && (
@@ -148,10 +143,10 @@ export default function ReviewPage() {
         <>
           <p className="max-w-[72ch] py-5 text-base leading-normal">
             {report.flags.length === 0 ? (
-              <>No moment was flagged for a second look. That is a normal result.</>
+              <>Nothing flagged for a second look. That is a normal result.</>
             ) : (
               <>
-                {report.flags.length === 1 ? "One moment is" : `${report.flags.length} moments are`} worth a second look
+                {report.flags.length === 1 ? "One moment flagged" : `${report.flags.length} moments flagged`} for a second look
                 {first && (
                   <>
                     , starting at <span className="font-mono text-accent">{clock(first.start)}</span>

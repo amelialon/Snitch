@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { getLiveConfig, saveVisualMarker } from "@/lib/api";
+import { getInterview, getLiveConfig, saveVisualMarker } from "@/lib/api";
+import { CallStage } from "@/components/call-stage";
 import { ScreenOverlay, type VisualMarker } from "@/lib/screen-overlay";
 import { LiveCall, type CallTracks } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
@@ -12,7 +13,6 @@ import {
   removeRecording,
   type SavedRecording,
 } from "@/lib/recording-store";
-import { VideoTile } from "@/components/video-tile";
 
 type Phase = "idle" | "joining" | "live" | "saving" | "retry" | "ended";
 
@@ -45,7 +45,6 @@ function LiveRoom() {
   const [markerText, setMarkerText] = useState("");
   const [opacity, setOpacity] = useState(.35);
 
-  const stage = useRef<HTMLDivElement | null>(null);
   const ending = useRef(false);
   const mounted = useRef(true);
   const busy = useRef(false);
@@ -68,6 +67,8 @@ function LiveRoom() {
 
   const [connected, setConnected] = useState(false);
   const [micOn, setMicOn] = useState(true);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [candidateName, setCandidateName] = useState("Candidate");
   const [cameraOn, setCameraOn] = useState(true);
 
 
@@ -89,6 +90,10 @@ function LiveRoom() {
     marker.current = null;
     if (completed) void saveVisualMarker(id, { ...completed, finished_at: new Date().toISOString() })
       .catch(() => { if (mounted.current) setError("Screen sharing stopped, but its watermark end time could not be saved."); });
+  }, [id]);
+
+  useEffect(() => {
+    getInterview(id).then(({ interview }) => setCandidateName(interview.candidate_label)).catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -287,6 +292,7 @@ function LiveRoom() {
 
       if (!ending.current) {
         setPhase("live");
+        setStartedAt(Date.now());
 
         setNotice(
           role === "host"
@@ -409,19 +415,7 @@ function LiveRoom() {
         <h1 className="text-4xl leading-none">Live interview</h1>
 
         <span role="status" className="text-[13.5px] text-muted">
-          {phase === "live"
-            ? `${
-                role === "host" ? "● Recording · " : ""
-              }${
-                connected
-                  ? "Connected"
-                  : "Waiting for the other participant"
-              }`
-            : phase === "saving"
-              ? "Saving recording…"
-              : phase === "joining"
-                ? "Connecting…"
-                : ""}
+          {phase === "saving" ? "Saving recording…" : phase === "ended" ? "Ended" : ""}
         </span>
       </div>
 
@@ -507,130 +501,56 @@ function LiveRoom() {
         </section>
       )}
 
-      {(phase === "live" || phase === "joining") && (
-        <div ref={stage} className="space-y-3 bg-bg">
-          {(sharing || remote.screen) && (
-            <VideoTile
-              videoTrack={sharing ?? remote.screen}
-              label={
-                sharing
-                  ? "Your shared screen"
-                  : "Shared screen"
+      {(phase === "live" || phase === "joining" || phase === "saving") && (
+        <>
+          <CallStage
+            role={role}
+            otherName={role === "host" ? candidateName : "Interviewer"}
+            phase={phase}
+            connected={connected}
+            local={local}
+            remote={remote}
+            sharing={sharing}
+            sharePending={sharePending}
+            micOn={micOn}
+            cameraOn={cameraOn}
+            startedAt={startedAt}
+            inviteLink={role === "host" && typeof window !== "undefined" ? `${window.location.origin}/live/${id}?role=candidate` : undefined}
+            onCopyInvite={async () => {
+              const link = `${window.location.origin}/live/${id}?role=candidate`;
+              try {
+                await navigator.clipboard.writeText(link);
+                setNotice("Invitation link copied. Send it to the candidate.");
+              } catch {
+                setNotice(`Invitation link: ${link}`);
               }
-              muted
-              contain
-            />
-          )}
+            }}
+            onToggleMic={() => {
+              source.current?.getAudioTracks().forEach((track) => {
+                track.enabled = !micOn;
+              });
+              setMicOn(!micOn);
+            }}
+            onToggleCamera={() => {
+              source.current?.getVideoTracks().forEach((track) => {
+                track.enabled = !cameraOn;
+              });
+              setCameraOn(!cameraOn);
+            }}
+            onShare={sharing ? stopShare : startShare}
+            onEnd={() => finish()}
+          />
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <VideoTile
-              videoTrack={cameraOn ? local : null}
-              label={
-                role === "host"
-                  ? "You · interviewer"
-                  : "You · candidate"
-              }
-              muted
-            />
-
-            <VideoTile
-              videoTrack={remote.camera}
-              audioTrack={remote.audio}
-              label={
-                role === "host"
-                  ? "Candidate"
-                  : "Interviewer"
-              }
-            />
-          </div>
-
-          {phase === "live" && (
-            <div className="space-y-2 text-[13.5px] text-muted">
+          {phase === "live" && role === "host" && (
+            <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
               <label className="flex items-center gap-3">
-                Visual watermark visibility: {Math.round(opacity * 100)}%
-                <input aria-label="Visual watermark visibility" type="range" min="0.1" max="0.8" step="0.05" value={opacity} disabled={sharePending || !!sharing} onChange={e => setOpacity(Number(e.target.value))} />
+                Watermark visibility {Math.round(opacity * 100)}%
+                <input aria-label="Visual watermark visibility" type="range" min="0.1" max="0.8" step="0.05" value={opacity} disabled={sharePending || !!sharing} onChange={e => setOpacity(Number(e.target.value))} className="accent-(--accent)" />
               </label>
-              {markerText && <p role="status">Visual watermark active: <code>{markerText}</code>. Included in the shared video and recording.</p>}
+              {markerText && <span role="status">Watermark active: <code className="font-mono">{markerText}</code>, included in the shared video and recording.</span>}
             </div>
           )}
-
-          {phase === "live" && (
-            <div className="flex flex-wrap items-center gap-2 pt-2">
-              <button
-                className={button}
-                onClick={() => {
-                  source.current
-                    ?.getAudioTracks()
-                    .forEach((track) => {
-                      track.enabled = !micOn;
-                    });
-
-                  setMicOn(!micOn);
-                }}
-              >
-                {micOn
-                  ? "Mute microphone"
-                  : "Unmute microphone"}
-              </button>
-
-              <button
-                className={button}
-                onClick={() => {
-                  source.current
-                    ?.getVideoTracks()
-                    .forEach((track) => {
-                      track.enabled = !cameraOn;
-                    });
-
-                  setCameraOn(!cameraOn);
-                }}
-              >
-                {cameraOn
-                  ? "Turn camera off"
-                  : "Turn camera on"}
-              </button>
-
-              <button
-                disabled={sharePending}
-                className={button}
-                onClick={
-                  sharing
-                    ? stopShare
-                    : startShare
-                }
-              >
-                {sharePending
-                  ? "Choosing screen…"
-                  : sharing
-                    ? "Stop sharing"
-                    : "Share screen"}
-              </button>
-
-              <button
-                className={button}
-                onClick={() => {
-                  const el = stage.current;
-                  if (!el) return;
-                  if (document.fullscreenElement === el) document.exitFullscreen().catch(() => {});
-                  else el.requestFullscreen().catch(() => {});
-                }}
-              >
-                Full screen
-              </button>
-
-              <div className="flex-1" />
-
-              <button
-                className="btn btn-primary"
-                onClick={() => finish()}
-              >
-                {role === "host"
-                  ? "End interview"
-                  : "Leave interview"}
-              </button>
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {saved && (

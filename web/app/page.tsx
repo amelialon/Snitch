@@ -10,7 +10,7 @@ type Filter = "all" | "week" | "moments" | "processing";
 const FILTERS: [Filter, string][] = [
   ["all", "All"],
   ["week", "This week"],
-  ["moments", "With moments"],
+  ["moments", "Flagged"],
   ["processing", "Processing"],
 ];
 
@@ -27,7 +27,7 @@ function matches(interview: Interview, filter: Filter): boolean {
   }
 }
 
-/** What the Moments column says for one interview. A number when there is one; never a score. */
+/** What the To review column says for one interview. A count when there is one; never a score. */
 function moments(interview: Interview): { text: string; strong: boolean } {
   if (interview.stage === "live") return { text: "In the live room", strong: true };
   if (interview.status === "processing") return { text: `${interview.stage}, ${Math.round(interview.progress * 100)}%`, strong: false };
@@ -64,23 +64,12 @@ export default function InterviewList() {
     [interviews, filter, query],
   );
 
-  const summary = useMemo(() => {
-    if (!interviews) return "";
-    const week = interviews.filter((i) => matches(i, "week") && i.status === "ready").length;
-    const withMoments = interviews.filter((i) => matches(i, "moments")).length;
-    const live = interviews.filter((i) => i.stage === "live").length;
-    const parts = [`${week} reviewed this week.`];
-    if (withMoments) parts.push(`${withMoments} ${withMoments === 1 ? "has" : "have"} a moment waiting for your call.`);
-    if (live) parts.push(`${live} ${live === 1 ? "interview is" : "interviews are"} live right now.`);
-    return parts.join(" ");
-  }, [interviews]);
-
   return (
     <div>
       <header className="flex items-end justify-between gap-6 pb-7">
         <div className="space-y-2.5">
           <h1 className="text-[38px] leading-none">Interviews</h1>
-          <p className="text-[15px] text-muted">{summary || "Newest first. Interviews are never ranked against each other."}</p>
+          <p className="text-[15px] text-muted">All your candidate interviews, in one place.</p>
         </div>
         <Link href="/new" className="btn btn-primary">
           New review
@@ -116,7 +105,7 @@ export default function InterviewList() {
         <div>Candidate</div>
         <div>Interviewed</div>
         <div>Length</div>
-        <div>Moments</div>
+        <div>To review</div>
       </div>
 
       {interviews?.length === 0 && (
