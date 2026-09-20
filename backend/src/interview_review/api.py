@@ -45,6 +45,7 @@ class LiveInterviewIn(BaseModel):
     candidate_label: str = Field(min_length=1, max_length=200)
     attested_by: str = Field(min_length=1, max_length=200)
     consent_attested: bool = False
+    scheduled_for: AwareDatetime | None = None
 
 
 class ScreenShareIn(BaseModel):
@@ -189,7 +190,8 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             raise HTTPException(400, "A candidate label and attestation of consent to recording and automated review are required.")
         interview = Interview(
             id=uuid.uuid4().hex[:12], candidate_label=body.candidate_label.strip(),
-            stage="live", consent=Consent(attested_by=body.attested_by.strip(), attested_at=datetime.now(timezone.utc), text_version="live-recording-v1"),
+            stage="live", scheduled_for=body.scheduled_for,
+            consent=Consent(attested_by=body.attested_by.strip(), attested_at=datetime.now(timezone.utc), text_version="live-recording-v1"),
         )
         store.create_interview(interview)
         return interview

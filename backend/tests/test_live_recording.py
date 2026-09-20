@@ -130,3 +130,18 @@ def test_an_unsupported_document_type_is_refused_with_the_recording(fixture):
         },
     )
     assert result.status_code == 400
+
+
+def test_a_room_can_be_scheduled_for_later(fixture):
+    client, _, _ = fixture
+    made = client.post('/live-interviews', json={
+        'candidate_label': 'Later', 'attested_by': 'test', 'consent_attested': True, 'scheduled_for': '2026-10-02T14:30:00+00:00',
+    })
+    assert made.status_code == 201
+    assert made.json()['scheduled_for'] == '2026-10-02T14:30:00Z'
+    assert client.get(f"/interviews/{made.json()['id']}").json()['interview']['scheduled_for'] == '2026-10-02T14:30:00Z'
+    # an unscheduled room stays unscheduled, and a naive time is refused
+    unscheduled = client.post('/live-interviews', json={'candidate_label': 'Now', 'attested_by': 'test', 'consent_attested': True}).json()
+    assert unscheduled['scheduled_for'] is None
+    naive = client.post('/live-interviews', json={'candidate_label': 'Naive', 'attested_by': 'test', 'consent_attested': True, 'scheduled_for': '2026-10-02T14:30:00'})
+    assert naive.status_code == 422

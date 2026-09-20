@@ -69,6 +69,7 @@ function LiveRoom() {
   const [micOn, setMicOn] = useState(true);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [candidateName, setCandidateName] = useState("Candidate");
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(true);
 
 
@@ -93,7 +94,9 @@ function LiveRoom() {
   }, [id]);
 
   useEffect(() => {
-    getInterview(id).then(({ interview }) => setCandidateName(interview.candidate_label)).catch(() => {});
+    getInterview(id)
+      .then(({ interview }) => { setCandidateName(interview.candidate_label); setScheduledFor(interview.scheduled_for ?? null); })
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -415,7 +418,13 @@ function LiveRoom() {
         <h1 className="text-4xl leading-none">Live interview</h1>
 
         <span role="status" className="text-[13.5px] text-muted">
-          {phase === "saving" ? "Saving recording…" : phase === "ended" ? "Ended" : ""}
+          {phase === "saving"
+            ? "Saving recording…"
+            : phase === "ended"
+              ? "Ended"
+              : scheduledFor
+                ? `Scheduled for ${new Date(scheduledFor).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                : ""}
         </span>
       </div>
 

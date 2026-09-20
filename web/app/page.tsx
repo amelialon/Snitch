@@ -29,7 +29,13 @@ function matches(interview: Interview, filter: Filter): boolean {
 
 /** What the To review column says for one interview. A count when there is one; never a score. */
 function moments(interview: Interview): { text: string; strong: boolean } {
-  if (interview.stage === "live") return { text: "In the live room", strong: true };
+  if (interview.stage === "live") {
+    const planned = interview.scheduled_for ? new Date(interview.scheduled_for) : null;
+    if (planned && planned.getTime() > Date.now()) {
+      return { text: `Scheduled, ${planned.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`, strong: false };
+    }
+    return { text: "In the live room", strong: true };
+  }
   if (interview.status === "processing") return { text: `${interview.stage}, ${Math.round(interview.progress * 100)}%`, strong: false };
   if (interview.status === "failed") return { text: "Failed", strong: false };
   const n = interview.summary.flag_count ?? 0;

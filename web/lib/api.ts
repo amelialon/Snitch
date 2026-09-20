@@ -45,10 +45,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const listInterviews = () => request<Interview[]>("/interviews");
 
-export const createLiveInterview = (candidate_label: string, attested_by: string, consent_attested: boolean) =>
+export const createLiveInterview = (candidate_label: string, attested_by: string, consent_attested: boolean, scheduled_for: string | null = null) =>
   request<Interview>("/live-interviews", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ candidate_label, attested_by, consent_attested }),
+    body: JSON.stringify({ candidate_label, attested_by, consent_attested, scheduled_for }),
   });
 
 export const getInterview = (id: string) =>

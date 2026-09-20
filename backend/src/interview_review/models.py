@@ -291,6 +291,7 @@ class Interview(BaseModel):
     progress: float = 0.0
     context_flags: dict[str, bool] = Field(default_factory=dict)
     consent: Consent
+    scheduled_for: datetime | None = None  # live rooms only: when the interview is planned to happen
     files: dict[str, str] = Field(default_factory=dict)  # role -> stored file name
     fingerprints: dict[str, str] = Field(default_factory=dict)  # role -> sha256 of the uploaded bytes
     summary: dict[str, float | int | str] = Field(default_factory=dict)

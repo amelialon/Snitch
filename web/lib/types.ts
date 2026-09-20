@@ -24,6 +24,8 @@ export interface Interview {
   summary: { flag_count?: number; cv_finding_count?: number; skipped_count?: number; duration_sec?: number };
   feedback: Record<string, Feedback>;
   consent?: { attested_by: string; attested_at: string; text_version: string };
+  /** Live rooms only: when the interview is planned to happen. */
+  scheduled_for?: string | null;
   error: string | null;
   created_at: string;
 }
