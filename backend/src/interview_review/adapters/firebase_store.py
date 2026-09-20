@@ -20,6 +20,9 @@ from ..models import Interview
 # write each, which times out on an ordinary uplink. Small chunks each get their own timeout and retry.
 _UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024  # must be a multiple of 256 KiB
 _UPLOAD_TIMEOUT_SEC = 300
+# Downloads likewise: chunked, so a dropped connection costs one chunk, with a retry budget that
+# outlasts a 127 MB recording on a slow venue network instead of the library's 120 s default.
+_DOWNLOAD_RETRY_DEADLINE_SEC = 1800
 
 
 class FirebaseStore:
@@ -33,6 +36,9 @@ class FirebaseStore:
             firebase_admin.initialize_app(credentials.Certificate(credentials_path), {"storageBucket": bucket})
         self._docs = firestore.client().collection("interviews")
         self._bucket = storage.bucket()
+        from google.cloud.storage.retry import DEFAULT_RETRY
+
+        self._download_retry = DEFAULT_RETRY.with_deadline(_DOWNLOAD_RETRY_DEADLINE_SEC)
 
     def _blob(self, interview_id: str, name: str):
         return self._bucket.blob(f"interviews/{interview_id}/{name}")
@@ -72,7 +78,9 @@ class FirebaseStore:
     def local_path(self, interview_id: str, name: str) -> Iterator[Path]:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / Path(name).name
-            self._blob(interview_id, name).download_to_filename(str(path))
+            blob = self._blob(interview_id, name)
+            blob.chunk_size = _UPLOAD_CHUNK_BYTES
+            blob.download_to_filename(str(path), timeout=_UPLOAD_TIMEOUT_SEC, retry=self._download_retry)
             yield path
 
     def public_url(self, interview_id: str, name: str) -> str | None:
