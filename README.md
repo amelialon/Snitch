@@ -28,8 +28,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 That prints a full review using the offline adapters (rule-based segmentation, no vendors).
-Add keys in `backend/.env` (see [.env.example](.env.example)) to swap in AssemblyAI, Claude,
-GPTZero, and OpenAI one at a time; every report names which adapters produced it.
+Add keys in `backend/.env` (see [.env.example](.env.example)) to swap in AssemblyAI, OpenAI and
+GPTZero one at a time; every report names which adapters produced it.
 
 ## Run the app
 
@@ -46,16 +46,35 @@ vendor upload small. Without `ffmpeg` it sends the original file instead, so it 
 
 ### Live interviews and screen sharing
 
-Open **Live interviews**, create an interview, and copy its invitation link for the candidate.
-Both participants join inside this app; no Daily/Zoom account or external room URL is required.
-The interviewer starts a recorded interview after confirming consent. Both cameras, both
-microphones, and any shared screen are captured. Screen/system audio and audio canaries are excluded.
-Shared screens include an adaptive visual watermark, composited before transmission and recording.
-Adjust its visibility before starting screen sharing; each sharing session gets a fresh saved identifier.
+Open **Live interviews** and create a room for the candidate, either **Right now** (you land in
+the room) or **Schedule for later** (pick a date and time). A scheduled room exists immediately
+and is listed under Rooms, upcoming first, and as *Scheduled* on the Interviews page; open it any
+time to copy the invitation link. The time is a label for the recruiter, not a gate: nothing stops
+either side joining early or late.
 
-Choose **End interview & create review** to finalize the video, upload it, and open its review
-while transcription/analysis runs. If a candidate leaves, the interviewer also finalizes and
-saves the recording. Failed uploads retain a browser copy with retry and download controls.
+Both participants join inside this app; no Daily/Zoom account or external room URL is required.
+The candidate confirms consent to recording and automated review before joining; the interviewer
+then starts recording. Both cameras, both microphones, and any shared screen are captured.
+Screen/system audio is excluded.
+
+**Screen-share watermark (visual canary).** Whenever a screen is shared, the app composites a
+faint, session-unique marker (`workingTotal_<10 hex>`) into the shared video before it is sent or
+recorded. It is placed on a quiet region of the screen, colored relative to the background, and
+kept at low opacity so a person watching the call is unlikely to notice it, while a copilot that
+screenshots or OCRs the candidate's screen may read it and echo it in a generated answer. The
+marker is a random identifier, not an instruction or an answer to anything. Each sharing session
+saves its marker and start/end time with the interview; afterwards, any text (a typed answer, a
+transcript excerpt) can be checked against it with an exact match. A hit is one signal in the
+canary family only: it never creates a flag on its own, and a miss says nothing. This is a
+disclosed integrity measure, covered by the consent the candidate confirms in the room; it
+depends on the marker surviving the receiver's video compression, so treat it as experimental
+until validated on the target network (see [screen-share validation](docs/screen-share-validation.md)).
+
+**End interview** stops recording and opens the **New review** form pre-filled with the candidate
+and the recording, where you can add a CV, cover letter and interview conditions. Transcription
+and analysis start when you press **Start review**; until then the recording stays in this
+browser. If a candidate leaves, the interviewer ends the interview the same way. A recording
+that was not submitted, or whose upload failed, can be continued from the room or downloaded.
 Reopen the same room in the same browser to recover locally saved chunks after interruption.
 An existing completed review is preserved when another interview is recorded from its room.
 
@@ -101,7 +120,7 @@ deployment password before anyone outside the team is given the link (architectu
 ## Tests
 
 ```bash
-cd backend && .venv/bin/pytest        # 34 tests, no network
+cd backend && .venv/bin/pytest        # no network
 cd web && npx tsc --noEmit
 ```
 
@@ -109,13 +128,14 @@ cd web && npx tsc --noEmit
 
 - `backend/` — the pipeline and API. `review.py` is the pure core that decides flags;
   `adapters/` holds the vendor and storage implementations behind `ports.py`.
-- `web/` — Next.js app: upload, live progress, and the review page.
+- `web/` — Next.js app: Interviews list, New review, the review page, Live interviews and the room.
 - `firebase/` — deny-all security rules for the no-auth demo.
 
 ## Status
 
 Working: upload → transcribe → segment → baseline → timing/delivery/content signals → fusion →
-report, with CV consistency and reviewer feedback. In-app WebRTC interviews with screen sharing,
-browser recording/recovery, and automatic upload into the review pipeline.
-Gaze/prosody signals, separate clean-mic recording, and the bias eval set are post-demo
-(architecture.md §10–§11).
+report, with CV consistency and reviewer feedback. In-app WebRTC interviews (immediate or
+scheduled) with screen sharing and the visual canary watermark, browser recording/recovery, and
+End interview → pre-filled New review → pipeline.
+Gaze/prosody signals, the audio canary, separate clean-mic recording, and the bias eval set are
+post-demo (architecture.md §10–§11).

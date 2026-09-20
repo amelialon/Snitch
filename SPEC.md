@@ -4,33 +4,48 @@ A post-interview review tool for recruiters. It analyzes a recorded interview an
 
 ## Current live interview behavior
 
+The recruiter creates a room from Live interviews, either for right now or **scheduled for a
+date and time**. A scheduled room exists immediately, carries `scheduled_for` on the interview
+record, is listed upcoming-first under Rooms and as "Scheduled" on the Interviews list, and shows
+its planned time in the room header. The time is informational only: joining is never gated on
+it, and once it has passed the room reads like any other open room.
+
 Participants join using an invitation link on this app. No external room setup is required.
-The interviewer confirms recording/review consent and starts recording at join. Cameras,
-microphones, and the shared screen are recorded. Ending the interview does not start a review
-by itself: the recording stays in the interviewer's browser and the interviewer lands on the
-New review form, pre-filled with the room's candidate and the recording, to add a CV, cover
-letter and interview conditions. Starting the review from that form uploads the recording with
-those fields onto the same interview record, and transcription and analysis run then. A
-recording left in the browser (upload not started, or failed) can be continued from the room
-or downloaded. Canary/watermark injection controls are removed.
-This change does not modify review signals, corroboration requirements, or candidate decisions.
+The recruiter attests consent when organising the room; the candidate confirms consent to
+recording and automated review before joining, and the interviewer then starts recording.
+Cameras, microphones, and the shared screen are recorded. Every shared screen carries the
+visual canary watermark described in the next section, at an opacity the host sets before
+sharing (default 35%). Ending the interview does not start a review by itself: the recording
+stays in the interviewer's browser and the interviewer lands on the New review form, pre-filled
+with the room's candidate and the recording, to add a CV, cover letter and interview conditions.
+Starting the review from that form uploads the recording with those fields onto the same
+interview record, and transcription and analysis run then. A recording left in the browser
+(upload not started, or failed) can be continued from the room or downloaded.
+None of this modifies review signals, corroboration requirements, or candidate decisions.
 
-## Superseded live screen-sharing prototype (2026-09-19)
+## Visual canary: the screen-share watermark
 
-The header exposes Live interviews with creation and existing-room access. Consented live
-sessions can exist before any recording is uploaded. Each successful screen capture gets a
-fresh benign identifier and timestamp persisted under its interview. No question answer or
-solving instruction is embedded. Pixel analysis every 450 ms evaluates an 8×8 set of candidate
+Consented live sessions can exist before any recording is uploaded. Each successful screen
+capture gets a fresh benign identifier (`workingTotal_` + 10 hex characters of the sharing
+session id) and timestamp persisted under its interview. The identifier is drawn into the
+shared video at low opacity so that a person watching the call is unlikely to notice it, while
+a copilot that captures the candidate's screen (screenshot → OCR or a vision model) may read it
+and repeat it in a generated answer. No question answer or solving instruction is embedded: the
+marker must never help anyone answer, and an honest candidate has no reason to produce it. Pixel analysis every 450 ms evaluates an 8×8 set of candidate
 placements using RGB variance, luminance, and edge density. Placement is heuristic, not
 semantic text/UI recognition. Stable locations are preferred; relocation is smoothed and faded.
 Background-relative color and adjustable opacity keep the marker subtly visible. The marker
 is composited into the transmitted screen track. Stopping or losing capture/call ends processing
 and transmission. Screen audio is not included.
 
-Exact identifier checking is available for submitted text. It is attribution evidence only;
-it does not independently create a flag or change candidate scoring. Visibility settings must
-be evaluated from received screenshots after compression. The calibration page provides local
-WebRTC checks; actual Daily calls and remote-device screenshots remain the acceptance target.
+Exact identifier checking is available for submitted text
+(`POST /interviews/{id}/screen-shares/{session}/check`). It is attribution evidence only: a hit
+is one signal in the canary family (E) and does not independently create a flag or change any
+candidate decision; a miss is never evidence of honesty. The measure is disclosed by the consent
+the candidate confirms in the room (§6 "Disclosure" applies). Visibility settings must be
+evaluated from received screenshots after compression; the local WebRTC smoke test in
+`docs/screen-share-validation.md` is not a validated threshold, and remote-device screenshots
+remain the acceptance target.
 
 ## 1. Principles
 

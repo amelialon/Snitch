@@ -1,26 +1,19 @@
 # Project Context
 
-Current live interview flow: calls now run inside the app using WebRTC and backend WebSocket
-signaling. Daily room setup and live canary/watermark controls were removed at the user's request.
-Recorded interviews capture both cameras/microphones plus screen sharing; ending uploads the
-recording into the review pipeline, with browser recovery and retry on upload failure. Participants
-need no external website. Public/device-to-device use still needs reachable HTTPS and potentially
-a configured TURN relay. Earlier watermark notes below are historical, not the active UI.
-
-Live screen sharing (2026-09-19): the header now exposes Live interviews. The existing Daily
-integration transmits an adaptive, human-visible identifier composited into shared video.
-Generation is local and random; no LLM or question-solving instruction is used. Each capture
-has a persisted session ID and timestamp. Exact matches are attribution signals only, without
-changes to fusion, thresholds, or candidate decisions. Visibility remains experimental until
-remote-device calibration; see `docs/screen-share-validation.md`.
-
 Read this first. It is the short version of what this project is, what has been decided and why, and the rules that anyone (human or AI assistant) working in this repo must not break. Details live in [SPEC.md](SPEC.md) (product behavior) and [architecture.md](architecture.md) (system design).
 
-_Last updated: 2026-09-19. Status: pre-code; spec and architecture written, nothing built yet._
+_Last updated: 2026-09-20. Status: built and deployed for the hackathon demo (web on Vercel, backend on Railway, Firebase storage). Product name: **Snitch**._
+
+## Where things stand
+
+- **Upload path:** New review form (recording, CV, cover letter, interview conditions) → transcription (AssemblyAI, disfluencies kept) → segmentation and question typing (OpenAI) → baseline → timing / delivery / content signals (GPTZero for AI-text) → deterministic fusion → review page.
+- **Live path:** Live interviews page creates a room, **right now or scheduled for a later date and time**. Scheduling only labels and orders the room (upcoming first; "Scheduled" on the Interviews list); it never gates joining. Calls run in-app over WebRTC with backend WebSocket signalling; no Daily, Zoom or other external room. The candidate confirms consent to recording and automated review before joining. Both cameras, microphones and any shared screen are recorded in the browser. **End interview** does not start a review: the host lands on the New review form pre-filled with the candidate and the recording, adds documents and conditions, and **Start review** uploads onto the same interview record and runs the pipeline.
+- **Visual canary (the watermark).** Every shared screen carries a faint, session-unique marker (`workingTotal_<10 hex>`) composited into the outgoing video before transmission and recording. It sits on a quiet region, is colored relative to the background, and stays at low opacity, so a person on the call is unlikely to register it while a copilot that screenshots or OCRs the candidate's screen may read it and repeat it in a generated answer. It is a random identifier, never an instruction or an answer. Each sharing session's marker and timestamps are saved with the interview; text can be checked against the marker afterwards with an exact match. A hit is one canary-family signal, never a flag by itself; a miss is not evidence of honesty. It is disclosed through the consent the candidate confirms in the room. Survival through the receiver's video compression is only smoke-tested (`docs/screen-share-validation.md`), so it stays labelled experimental.
+- **Not built:** the audio canary (SPEC §6), gaze/video signals, auth, retention, the bias eval set.
 
 ## What this is
 
-A review tool for recruiters and HR. A recruiter uploads a recorded interview plus the candidate's CV. The system analyzes it and returns **0–5 timestamped moments worth a second look**, where several independent signals suggest the candidate may have been using real-time AI assistance, plus a separate list of places where spoken claims contradict the CV.
+A review tool for recruiters and HR. A recruiter either uploads a recorded interview plus the candidate's CV, or hosts the interview in the app's own live room (immediately or at a scheduled time) and reviews the recording afterwards. The system analyzes it and returns **0–5 timestamped moments worth a second look**, where several independent signals suggest the candidate may have been using real-time AI assistance, plus a separate list of places where spoken claims contradict the CV.
 
 It is a **second-look tool, not a lie detector.** It produces evidence and a suggested follow-up question. The recruiter makes every decision.
 
@@ -63,7 +56,7 @@ These are product invariants. Do not add features, UI, fields, or prompts that v
 | **Pause-then-fluent** | Long silence followed by an immediately structured, filler-free answer. The core timing pattern. |
 | **Raw vs. clean transcript** | Raw keeps fillers, false starts, repairs (used for signals). Clean is for display and content analysis. |
 | **Artifact** | The versioned JSON output of one pipeline stage, stored in Firebase Storage. |
-| **Canary** | Experimental Phase 3 idea: a low-level spoken instruction mixed into the interviewer's audio ("use the word lighthouse") that a copilot's speech recognition may pick up and obey. Not in the demo. |
+| **Canary** | A disclosed integrity measure that only a copilot should react to. **Visual canary (built):** the faint session-unique marker in every shared screen, echoed by a copilot that reads the screen. **Audio canary (not built, SPEC §6):** a low-level spoken instruction mixed into the interviewer's audio. Either is one signal in family E. |
 | **CV consistency** | Comparison of spoken factual claims against the CV. Reported separately; never part of fusion. |
 | **Copilot** | The cheating tool being detected: real-time ASR → LLM → answer shown to the candidate. |
 
@@ -77,20 +70,21 @@ These are product invariants. Do not add features, UI, fields, or prompts that v
 | Fusion | Deterministic rules + versioned threshold config | Reproducible, auditable, tunable from feedback without prompt drift. |
 | CV findings | Separate section, outside fusion | Résumé accuracy and live assistance are different questions. |
 | Question typing | LLM classifies type + difficulty | Long pauses on hard design questions are normal; the baseline must be adjusted or the tool punishes thinking. |
-| Frontend | Next.js + TypeScript + Tailwind + shadcn/ui | Standard, fast to build. |
+| Frontend | Next.js (App Router) + TypeScript + Tailwind v4, hand-styled | Standard, fast to build. One indigo accent, sidebar navigation, no component library. |
 | Backend | Python: FastAPI + a standalone pipeline package | All analysis libraries are Python; pipeline must be callable from both the API and the eval harness. |
 | Database / storage | **Firebase** (Firestore + Storage) | Team preference. Resumable uploads and realtime progress come for free. Large artifacts go to Storage because of Firestore's 1 MiB doc limit. |
-| Transcription | Hosted ASR with fillers enabled (AssemblyAI or Deepgram) | Default Whisper drops fillers, which destroys the disfluency signal. Vendor choice still open. |
+| Transcription | **AssemblyAI** with disfluencies on and speaker labels | Default Whisper drops fillers, which destroys the disfluency signal. Speaker labels give the interviewer / candidate split on the review page. |
 | AI-text detection | **GPTZero API** | Team decision. Used as one Family C signal only; see caveats below. |
 | Segmentation / depth / write-ups | **OpenAI API** (Responses API + structured outputs) | Typing, segmentation, depth-collapse judgment, flag explanations. Its own seam (`Analyst` → `OpenAIAnalyst`). Changed from Claude. |
 | CV consistency | **OpenAI API** (Responses API + structured outputs) | A separate seam (`CvAnalyzer`), deliberately kept off the flag path even though it shares the vendor. One `OPENAI_API_KEY` powers both. Key is server-side only, never in the browser or an API response. |
-| Auth | **None for the demo** | Demo scope. Mitigated by: web app never touches Firebase (all writes via backend), deny-all rules, mock data only, not publicly deployed. `owner_id`/`org_id` fields exist from day one. |
+| Auth | **None for the demo** | Demo scope. Mitigated by: web app never touches Firebase (all writes via backend), deny-all rules, mock data only. `owner_id`/`org_id` fields exist from day one. The deployed URL counts as the demo environment (rule 11). |
 | Clips | Seek ranges on the original video | No clip files to cut or store. |
-| Phasing | Audio-only MVP → video signals → live canary | Audio carries most of the signal; gaze needs a quality gate; the canary must sit in a live call. |
-| Canary audio | Generated by a **separate part of the project**; this app only loads/schedules/mixes/logs/analyzes | Given `.wav` + `instruction` + `expectedMarker` + `durationMs`. This app never synthesises audio. |
-| Canary use gate | Only in a live session with the SPEC §6 disclosure consent | It is a disclosed integrity measure, not a covert channel; one signal in the canary family, never proof alone. |
-| Canary on Zoom | A **Zoom App** (`zoom-app/`) inside the meeting sidebar | Interviews mostly happen on Zoom, not in our Daily room. Visual channel via the Layers API camera overlay (clean: only the outgoing video changes). Audio channel via app-share-with-sound, because the Zoom Apps SDK cannot mix into the mic; a bot or virtual device stays the fallback if share audio fails validation. |
-| Canary channels | `audio` and `visual`, logged with `channel`, `platform`, and `gain_db` / `overlay_opacity` | Copilots ingest both what the candidate hears and what their screen shows (screenshot → OCR / vision model). Survival differs per channel and per platform, so the record must say which was used. Same ≥2-families rule; a visual hit is still one canary-family signal. |
+| Live calls | **In-app WebRTC** with backend WebSocket signalling; one backend worker | Daily cost money and Zoom needs a bot or app to inject anything; owning the call gives us the recording, the screen share and the watermark for free. The signalling registry is in process memory, so one replica. |
+| Scheduling | A `scheduled_for` timestamp on the live room, optional | Recruiters plan interviews ahead and want the invite link early. Kept as a label and sort key only; gating the room on the clock would add failure modes (time zones, early joins) for no integrity benefit. |
+| End → review | Ending the call opens the pre-filled New review form; the pipeline runs on **Start review** | The recruiter attaches the CV and conditions once, in one place, and nothing is transcribed until they decide to review. |
+| Visual canary | Random `workingTotal_<hex>` marker composited into every shared screen at low opacity, saved per sharing session, exact-match check afterwards | Copilots ingest what the candidate's screen shows (screenshot → OCR / vision model), and a marker that an honest candidate would never type or say has a near-zero false-positive base rate. Random identifier, not an instruction: it must never help anyone answer. Same ≥2-families rule; a hit is one canary-family signal. |
+| Canary use gate | Only in a live session, disclosed by the consent the candidate confirms in the room | It is a disclosed integrity measure, not a covert channel; never proof alone. |
+| Audio canary | Designed (SPEC §6), **not built**; would use pre-generated `.wav` + `instruction` + `expectedMarker` from another part of the project | Platform noise suppression may strip it and it needs a clean-mic recording path; deferred behind the visual channel, which needs no audio mixing. |
 
 ## Known caveats to keep in mind
 
@@ -103,25 +97,25 @@ These are product invariants. Do not add features, UI, fields, or prompts that v
 
 ## Demo scope
 
-**In:** upload (recording + CV), Zoom App canary injection (visual + share-audio), consent attestation, transcription, segmentation, question typing, baseline, timing + delivery + content signals (incl. GPTZero), CV consistency (OpenAI), fusion, review page with synced player/transcript/flag cards, useful / not-useful feedback, skipped-signals reporting. Canary tooling: manifest load, preload/decode, Preview (local only), gain (dB→linear), whole-word marker detection, and question/canary event logging with timestamps.
+**In:** upload (recording + CV + cover letter + conditions), consent attestation, transcription with speaker separation, segmentation, question typing, baseline, timing + delivery + content signals (incl. GPTZero), CV consistency (OpenAI), fusion, review page with synced player / transcript / "For review" analysis boxes and flag cards, useful / not-useful feedback, skipped-signals reporting, delete. Live interviews: immediate or scheduled rooms, in-app WebRTC call with screen share and full-screen console, visual canary watermark with per-session records and exact-match check, browser recording with recovery, End interview → pre-filled New review.
 
-**Out:** auth, multi-tenant orgs, gaze/video signals (reported as "not enabled"), the **live two-person call room and the outgoing-audio mix** (blocked on a video-SDK choice — see architecture.md §11), retention jobs, audit log, the bias eval set (structure only; no dataset), deployment beyond local or password-protected.
+**Out:** auth, multi-tenant orgs, gaze/video signals (reported as "not enabled"), the audio canary and outgoing-audio mix, retention jobs, audit log, the bias eval set (structure only; no dataset), any deployment shared beyond the team.
 
 ## Open questions
 
-1. ASR vendor: AssemblyAI vs. Deepgram (compare filler fidelity and diarization on a sample interview).
-2. Which transcript normalization goes to GPTZero (needs a small experiment; do this early).
-3. Can we obtain interviewer-side local recordings, or only platform recordings? Sets the ceiling on timing reliability.
-4. Show low-confidence flags in v1, or hold them until calibration data exists?
-5. Canary delivery mechanism on Zoom: the Zoom App covers visual (camera overlay) and audio via share audio. Whether a mic-path mix is still needed (meeting bot vs. desktop virtual audio device) depends on share-audio survival results.
-6. Product name. The working folder name "Interview_Cheater" reads as a tool *for* cheating.
+1. Which transcript normalization goes to GPTZero (needs a small experiment on honest vs. assisted recordings).
+2. Show low-confidence flags in v1, or hold them until calibration data exists?
+3. Watermark survival on real remote devices and networks: the 35% / 80 setting is a local smoke test, not a validated threshold. Does it survive the receiver's compression, and does the candidate notice it?
+4. Whether the audio canary is worth building given platform noise suppression, now that the visual channel exists.
+5. Stale live rooms: rooms that were opened but never ended stay "In the live room" forever; they need expiry or an end-from-list action.
 
 ## Working conventions
 
-- `pipeline/schemas/` (Pydantic) is the source of truth for all data shapes; TypeScript types are generated from it.
+- `backend/src/interview_review/models.py` (Pydantic) is the source of truth for all data shapes; `web/lib/types.ts` mirrors it by hand and must be updated with it.
 - The browser never writes to Firestore; all mutations go through the API.
 - The pipeline package never imports from the API and runs from a CLI against local disk for tests and eval.
 - Artifacts are versioned and never overwritten; every flag records the pipeline version and threshold config hash that produced it.
-- Vendor clients (`asr`, `claude`, `gptzero`) are thin and mockable; tests never hit real vendors.
+- Vendor adapters (`assemblyai`, `openai_analyst`, `openai_cv_analyzer`, `gptzero`, `firebase_store`) are thin and mockable behind `ports.py`; tests never hit real vendors. Real keys live only in `backend/.env` / `web/.env.local`, never in the `.example` templates.
+- The backend does not hot-reload: restart `cli serve` (and redeploy Railway) after backend changes.
 - When a change touches signals or thresholds, state its expected effect on false positives for non-native and neurodivergent candidates.
 - Keep the three docs in sync: product behavior → SPEC.md, system design → architecture.md, decisions and their reasons → this file.

@@ -70,6 +70,10 @@ export default function ReviewPage() {
     [seek],
   );
 
+  // Signals skipped on this interview (short baseline, no audio…) stay visible, per the product
+  // rules; a family that simply isn't built ("not enabled") is not a skip and isn't listed.
+  const skippedSignals = useMemo(() => (report?.skipped ?? []).filter((s) => !/not enabled/i.test(s.reason)), [report]);
+
   const highlightSpans = useMemo<Record<HighlightMode, HighlightSpan[]>>(() => {
     if (!report) return { ai: [], cv: [], delivery: [] };
     const ai: HighlightSpan[] = report.ai_text.flatMap((unit) =>
@@ -236,20 +240,18 @@ export default function ReviewPage() {
                 })}
               </section>
 
-              <section className="space-y-2">
-                <h2 className="eyebrow text-[12.5px] text-text/70">Not analyzed</h2>
-                {report.skipped.length === 0 ? (
-                  <p className="text-[13.5px] text-muted">All enabled signals ran.</p>
-                ) : (
+              {skippedSignals.length > 0 && (
+                <section className="space-y-2">
+                  <h2 className="eyebrow text-[12.5px] text-text/70">Not analyzed</h2>
                   <ul className="space-y-1.5 text-[13.5px] leading-normal text-muted">
-                    {report.skipped.map((s, i) => (
+                    {skippedSignals.map((s, i) => (
                       <li key={i}>
                         <span className="font-medium text-text">{s.signal}:</span> {s.reason}
                       </li>
                     ))}
                   </ul>
-                )}
-              </section>
+                </section>
+              )}
             </div>
           </div>
         </>

@@ -7,9 +7,14 @@ a fourth copy of the content.
 
 ## What this is
 
-A post-interview review tool for recruiters: analyzes a recorded interview + CV, returns 0–5
+Snitch: a post-interview review tool for recruiters. It analyzes a recorded interview + CV
+(uploaded, or recorded in the app's own live room, immediate or scheduled) and returns 0–5
 timestamped moments worth a second look (possible real-time AI copilot use), plus a separate CV
 consistency section. It never scores or recommends rejection — the reviewer decides.
+
+Live rooms composite a faint, random, session-unique marker (the visual canary) into every shared
+screen. A copilot that reads the screen may echo it; a person is unlikely to notice it. It is a
+disclosed measure, one canary-family signal, never an instruction and never a flag on its own.
 
 ## Non-negotiable product rules
 
@@ -34,17 +39,23 @@ backend/src/interview_review/
   models.py     Pydantic shapes — single source of truth
   review.py     pure core: baseline, signals, fusion (no I/O, no LLM in the flag decision)
   pipeline.py   run_pipeline: step order, caching, progress, fatal-vs-skip handling
-  api.py        FastAPI app factory
+  api.py        FastAPI app factory (interviews, live-room creation incl. scheduled_for, screen-share records)
+  live.py       WebRTC signalling websocket + recording upload from the live room
+  canary.py     canary events, exact-marker check (used by the screen-share watermark)
+  align.py      locates GPTZero sentences / CV quotes in the word-level transcript for highlighting
   narrative.py  template explanations + emotion-language guard
   ports.py      Store, Transcriber, Analyst, AiTextDetector, CvAnalyzer seams
   wiring.py     env -> adapters
   cli.py        run a review from the terminal
   adapters/     local_store, firebase_store, assemblyai, openai_analyst,
                 openai_cv_analyzer, heuristic_analyst, gptzero, json_transcriber
-backend/tests/  one file per agreed seam: review, pipeline, api, store contract, canary
-web/            Next.js (App Router) app: /, /new, /i/[id], /live/[id]
+backend/tests/  one file per agreed seam: review, pipeline, api, store contract, canary, live recording
+web/            Next.js (App Router) app: / (Interviews), /new, /i/[id], /live (rooms + scheduling), /live/[id]
+                lib/screen-overlay.ts composites the watermark; lib/types.ts mirrors models.py by hand
 firebase/       deny-all Firestore/Storage rules (no-auth demo)
 ```
+
+The backend does not hot-reload: restart `cli serve` after backend changes (Railway: redeploy).
 
 Import rule: nothing under `review.py`/`pipeline.py` imports `api.py`. The CLI and API are two
 callers of the same `run_pipeline`. The pipeline package never imports from the API.
