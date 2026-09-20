@@ -44,7 +44,7 @@ export default function InterviewList() {
         <ul className="mt-6 divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
           {interviews.map((interview) => (
             <li key={interview.id}>
-              <Link href={`/i/${interview.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-bg">
+              <Link href={`/${interview.stage === "live" ? "live" : "i"}/${interview.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-bg">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{interview.candidate_label}</p>
                   <p className="text-xs text-muted">{new Date(interview.created_at).toLocaleString()}</p>

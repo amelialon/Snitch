@@ -12,6 +12,12 @@
   --mark-strong: #f2d477;
   --mark-text: #6b4e00;
   --danger: #a3341f;
+  --flag-ai: #f6d9d1;
+  --flag-ai-text: #7a2c1d;
+  --hl-warn: #ffd60a;
+  --hl-warn-text: #1c1b18;
+  --hl-ai: #d92d20;
+  --hl-ai-text: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +33,12 @@
     --mark-strong: #7a6420;
     --mark-text: #f3dc8d;
     --danger: #f08b76;
+    --flag-ai: #4a2318;
+    --flag-ai-text: #f3b4a3;
+    --hl-warn: #f2c200;
+    --hl-warn-text: #121311;
+    --hl-ai: #ff5a4d;
+    --hl-ai-text: #121311;
   }
 }
 
@@ -42,6 +54,12 @@
   --color-mark-strong: var(--mark-strong);
   --color-mark-text: var(--mark-text);
   --color-danger: var(--danger);
+  --color-flag-ai: var(--flag-ai);
+  --color-flag-ai-text: var(--flag-ai-text);
+  --color-hl-warn: var(--hl-warn);
+  --color-hl-warn-text: var(--hl-warn-text);
+  --color-hl-ai: var(--hl-ai);
+  --color-hl-ai-text: var(--hl-ai-text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

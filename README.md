@@ -40,6 +40,30 @@ cd web && npm install && npm run dev                            # app on :3000
 
 Upload a recording (or a transcript `.json`) plus an optional CV, and review the result.
 
+### Live interviews and screen sharing
+
+Open **Live interviews**, create an interview, and copy its invitation link for the candidate.
+Both participants join inside this app; no Daily/Zoom account or external room URL is required.
+The interviewer starts a recorded interview after confirming consent. Both cameras, both
+microphones, and any shared screen are captured. Screen/system audio is excluded. Canary audio,
+watermarks, and calibration controls have been removed from the live interface.
+
+Choose **End interview & create review** to finalize the video, upload it, and open its review
+while transcription/analysis runs. If a candidate leaves, the interviewer also finalizes and
+saves the recording. Failed uploads retain a browser copy with retry and download controls.
+Reopen the same room in the same browser to recover locally saved chunks after interruption.
+An existing completed review is preserved when another interview is recorded from its room.
+
+The local app address works on this computer. Other devices need a reachable HTTPS deployment
+and matching API/CORS configuration. Restrictive networks may need an operator-configured TURN
+relay via `WEBRTC_ICE_SERVERS` (JSON RTCIceServer array). No external account setup is part of the
+participant flow. Use one backend worker for the in-memory signaling room registry. Automated
+review uses the project's configured transcription/analysis adapters; recording alone needs no
+vendor API key. See [live recording validation](docs/live-recording-validation.md).
+
+Restart the Python backend after updating it so the new live-session routes are available.
+On Windows, from `backend`: `.\.venv\Scripts\python.exe -m interview_review.cli serve`.
+
 ## Tests
 
 ```bash
@@ -59,10 +83,15 @@ cd web && npx tsc --noEmit
 ## Status
 
 Working: upload → transcribe → segment → baseline → timing/delivery/content signals → fusion →
+<<<<<<< Updated upstream
 report, with CV consistency and reviewer feedback. Live interview room (Daily) with the canary
 tooling — manifest load, preload, preview, gain, Send / Send+Ask into the outgoing audio mix,
 question timestamps, and marker detection. Set `NEXT_PUBLIC_DAILY_ROOM_URL` to use the room.
 Zoom App (`zoom-app/`) with the same canaries: visual overlay on the outgoing camera (Layers API)
 and audio via app-share-with-sound; needs a Marketplace app + ngrok (see its README).
+=======
+report, with CV consistency and reviewer feedback. In-app WebRTC interviews with screen sharing,
+browser recording/recovery, and automatic upload into the review pipeline.
+>>>>>>> Stashed changes
 Gaze/prosody signals, separate clean-mic recording, and the bias eval set are post-demo
 (architecture.md §10–§11).

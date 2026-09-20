@@ -2,7 +2,7 @@ import type { Interview } from "@/lib/types";
 
 export function StatusChip({ interview }: { interview: Interview }) {
   const label =
-    interview.status === "processing"
+    interview.stage === "live" ? "Live room" : interview.status === "processing"
       ? `${interview.stage} · ${Math.round(interview.progress * 100)}%`
       : interview.status === "ready"
         ? "Ready"

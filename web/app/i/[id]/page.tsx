@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  clock,
   deleteInterview,
   getInterview,
   getTranscript,
@@ -13,9 +12,10 @@ import {
   sendFeedback,
 } from "@/lib/api";
 import type { Interview, Report, Transcript } from "@/lib/types";
+import { AnalysisBoxes, type HighlightMode } from "@/components/analysis-boxes";
 import { FlagCard } from "@/components/flag-card";
 import { Timeline } from "@/components/timeline";
-import { TranscriptPane } from "@/components/transcript-pane";
+import { TranscriptPane, type HighlightSpan } from "@/components/transcript-pane";
 
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +25,7 @@ export default function ReviewPage() {
   const [error, setError] = useState("");
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [highlightMode, setHighlightMode] = useState<HighlightMode | null>(null);
   const video = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -66,11 +67,31 @@ export default function ReviewPage() {
     [seek],
   );
 
+  const highlightSpans = useMemo<Record<HighlightMode, HighlightSpan[]>>(() => {
+    if (!report) return { ai: [], cv: [], delivery: [] };
+    const ai: HighlightSpan[] = report.ai_text.flatMap((unit) =>
+      unit.sentences
+        .filter((s) => s.cls !== "human")
+        .map((s) => ({
+          start: s.start,
+          end: s.end,
+          cls: s.cls === "ai" ? ("ai" as const) : ("yellow" as const),
+          title: s.cls === "ai" ? "Likely AI-generated wording" : "Wording that may reflect AI influence",
+        })),
+    );
+    const cv: HighlightSpan[] = report.cv_findings
+      .filter((f) => f.start !== null && f.end !== null)
+      .map((f) => ({ start: f.start as number, end: f.end as number, cls: "yellow" as const, title: `CV says: ${f.cv_evidence}` }));
+    const delivery: HighlightSpan[] = report.signals
+      .filter((s) => (s.family === "timing" || s.family === "delivery") && s.anomalous)
+      .map((s) => ({ start: s.evidence.start, end: s.evidence.end, cls: "yellow" as const, title: s.evidence.note }));
+    return { ai, cv, delivery };
+  }, [report]);
+
   if (error) return <p className="rounded-md border border-border bg-surface p-4 text-sm text-danger">{error}</p>;
   if (!interview) return <p className="text-sm text-muted">Loading…</p>;
 
   const duration = interview.summary.duration_sec ?? transcript?.duration ?? 0;
-  const flagCount = report?.flags.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -121,20 +142,6 @@ export default function ReviewPage() {
 
       {interview.status === "ready" && report && (
         <>
-          <div className="rounded-lg border border-border bg-surface p-4">
-            <p className="text-sm">
-              {flagCount === 0 ? (
-                <>No moments were flagged for a second look. That is a normal result.</>
-              ) : (
-                <>
-                  <strong>{flagCount}</strong> moment{flagCount === 1 ? "" : "s"} worth a second look. Each needs your
-                  judgement; nothing here is a conclusion.
-                </>
-              )}
-            </p>
-            <p className="mt-1 text-xs text-muted">Analyzed by: {Object.entries(report.adapters).map(([k, v]) => `${k}=${v}`).join(", ")}</p>
-          </div>
-
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(320px,420px)]">
             <div className="space-y-4">
               <video
@@ -164,15 +171,24 @@ export default function ReviewPage() {
                     current={current}
                     canSeek
                     onSeek={seek}
+                    highlight={highlightMode ? highlightSpans[highlightMode] : undefined}
                   />
                 </div>
               )}
             </div>
 
             <div className="space-y-4">
+              <AnalysisBoxes
+                report={report}
+                active={highlightMode}
+                onToggle={(mode) => setHighlightMode((prev) => (prev === mode ? null : mode))}
+              />
+
               <section className="space-y-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Moments to review</h2>
-                {report.flags.length === 0 && <p className="text-sm text-muted">None.</p>}
+                {report.flags.length === 0 && (
+                  <p className="text-sm text-muted">No moments were flagged for a second look. That is a normal result.</p>
+                )}
                 {report.flags.map((flag) => {
                   const unit = report.units.find((u) => u.id === flag.unit_id);
                   return (
@@ -194,33 +210,6 @@ export default function ReviewPage() {
                     />
                   );
                 })}
-              </section>
-
-              <section className="rounded-lg border border-border bg-surface p-4">
-                <h2 className="text-sm font-semibold">CV / Interview Consistency</h2>
-                {report.cv_findings.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted">Nothing notable, or no CV was analyzed.</p>
-                ) : (
-                  <ul className="mt-3 space-y-3">
-                    {report.cv_findings.map((finding, i) => {
-                      const unit = finding.unit_id ? report.units.find((u) => u.id === finding.unit_id) : null;
-                      return (
-                        <li key={i} className="text-sm">
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize">{finding.classification}</span>
-                            {unit && (
-                              <button onClick={() => seek(unit.answer_start)} className="font-mono text-xs text-muted hover:text-accent">
-                                {clock(unit.answer_start)}
-                              </button>
-                            )}
-                          </div>
-                          <p className="mt-1">{finding.claim}</p>
-                          <p className="mt-0.5 text-muted">{finding.cv_evidence}</p>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
               </section>
 
               <section className="rounded-lg border border-border bg-surface p-4">

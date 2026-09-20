@@ -10,14 +10,16 @@ from interview_review.adapters.heuristic_analyst import HeuristicAnalyst
 from interview_review.adapters.json_transcriber import JsonTranscriber
 from interview_review.adapters.local_store import LocalStore
 from interview_review.api import create_app
+from interview_review.models import AiTextRaw
 from interview_review.ports import Deps
 
 
 class MarkerDetector:
     name = "marker"
 
-    def score(self, text: str) -> float:
-        return 0.97 if text.startswith(polished(25)) else 0.05
+    def analyze(self, text: str) -> AiTextRaw:
+        score = 0.97 if text.startswith(polished(25)) else 0.05
+        return AiTextRaw(overall_class="ai" if score >= 0.8 else "human", overall_score=score, sentences=[])
 
 
 def transcript_json() -> bytes:
@@ -156,3 +158,18 @@ def test_a_different_recording_is_not_served_from_the_cache(client):
     created = client.post("/interviews", data=data, files=files).json()
 
     assert client.get(f"/interviews/{created['id']}").json()["report"]["flags"] == []
+
+
+def test_a_failed_file_store_leaves_no_half_created_interview(tmp_path):
+    class FailingStore(LocalStore):
+        def put_file(self, interview_id, name, src):
+            raise TimeoutError("write operation timed out")
+
+    deps = Deps(store=FailingStore(tmp_path), transcriber=JsonTranscriber(), analyst=HeuristicAnalyst())
+    client = TestClient(create_app(deps))
+
+    response = submit(client)
+
+    assert response.status_code == 502
+    assert "try again" in response.json()["detail"]
+    assert client.get("/interviews").json() == []

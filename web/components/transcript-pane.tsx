@@ -4,6 +4,13 @@ import { useEffect, useMemo, useRef } from "react";
 import { clock } from "@/lib/api";
 import type { Flag, UnitView, Word } from "@/lib/types";
 
+export interface HighlightSpan {
+  start: number;
+  end: number;
+  cls: "ai" | "yellow";
+  title?: string;
+}
+
 interface Props {
   units: UnitView[];
   words: Word[];
@@ -12,6 +19,7 @@ interface Props {
   current: number;
   canSeek: boolean;
   onSeek: (seconds: number) => void;
+  highlight?: HighlightSpan[];
 }
 
 /** Consecutive words by one speaker, so each turn can be shown on its own labeled row. */
@@ -26,7 +34,8 @@ function speakerRuns(ws: Word[]): { speaker: string; words: Word[] }[] {
 }
 
 /** The interview, exchange by exchange, with interviewer and candidate turns separated. */
-export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek }: Props) {
+export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek, highlight }: Props) {
+  const highlightAt = (start: number) => (highlight ?? []).find((h) => start >= h.start - 0.02 && start < h.end + 0.02);
   const flagged = useMemo(() => {
     const ids = new Set(flags.map((f) => f.unit_id));
     return new Set(units.filter((u) => ids.has(u.id) || (u.parent_id && ids.has(u.parent_id))).map((u) => u.id));
@@ -80,11 +89,21 @@ export function TranscriptPane({ units, words, flags, candidate, current, canSee
                     <p className={`flex-1 leading-relaxed ${isCandidate ? "" : "text-muted"}`}>
                       {run.words.map((word) => {
                         const spoken = isActive && current >= word.start && current < word.end + 0.15;
+                        // highlights describe the candidate's own wording, never the interviewer's
+                        const hit = isCandidate ? highlightAt(word.start) : undefined;
+                        const wordClass = hit
+                          ? hit.cls === "ai"
+                            ? "rounded-sm bg-hl-ai px-0.5 text-hl-ai-text"
+                            : "rounded-sm bg-hl-warn px-0.5 text-hl-warn-text"
+                          : spoken
+                            ? "rounded-sm bg-accent text-accent-fg"
+                            : "";
                         return (
                           <span
                             key={word.start}
                             onClick={canSeek ? () => onSeek(word.start) : undefined}
-                            className={`${canSeek ? "cursor-pointer hover:underline" : ""} ${spoken ? "rounded-sm bg-accent text-accent-fg" : ""}`}
+                            title={hit?.title}
+                            className={`${canSeek ? "cursor-pointer hover:underline" : ""} ${wordClass}`}
                           >
                             {word.text}{" "}
                           </span>

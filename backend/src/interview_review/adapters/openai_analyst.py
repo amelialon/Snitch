@@ -10,7 +10,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from ..models import DepthJudgment, Difficulty, QuestionType, Segmentation, Turn, Unit, UnitView
-from ..ports import FlagContext, FlagNarrative
+from ..ports import FlagContext, FlagNarrative, ReportDigest
 
 _CONTEXT = (
     "You are part of an interview review tool used by recruiters. It points a human reviewer at "
@@ -36,6 +36,10 @@ class _SegOut(BaseModel):
 
 class _NarrativesOut(BaseModel):
     narratives: list[FlagNarrative]
+
+
+class _SummaryOut(BaseModel):
+    text: str
 
 
 class OpenAIAnalyst:
@@ -142,3 +146,20 @@ class OpenAIAnalyst:
         )
         out: _NarrativesOut = self._ask(instructions, material, _NarrativesOut)
         return out.narratives
+
+    def summarize(self, digest: ReportDigest) -> str:
+        instructions = (
+            "Write ONE to TWO short sentences (about 40 words max) summarizing this interview review "
+            "for a recruiter, in plain language, using only the facts given below. Mention the flag "
+            "count only if it is greater than zero. Cover the AI-text signal, CV alignment, and "
+            "delivery/timing pattern. Never state or imply a verdict, a hiring recommendation, or "
+            "anything about emotion, stress, or dishonesty. Do not invent numbers or facts not given."
+        )
+        material = (
+            f"flags: {digest.flag_count} (families involved: {', '.join(digest.families) or 'none'})\n"
+            f"ai_text_class: {digest.ai_class or 'not analyzed'} (counts: {digest.ai_counts})\n"
+            f"cv_alignment: {digest.cv_level or 'not analyzed'} ({digest.cv_contradictions} contradictions)\n"
+            f"delivery_pattern: {digest.delivery_class} - {digest.delivery_note}"
+        )
+        out: _SummaryOut = self._ask(instructions, material, _SummaryOut)
+        return out.text
