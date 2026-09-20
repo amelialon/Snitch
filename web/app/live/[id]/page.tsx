@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { getLiveConfig, saveVisualMarker, uploadLiveRecording } from "@/lib/api";
+import { getLiveConfig, saveVisualMarker } from "@/lib/api";
 import { ScreenOverlay, type VisualMarker } from "@/lib/screen-overlay";
 import { LiveCall, type CallTracks } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
@@ -70,7 +70,6 @@ function LiveRoom() {
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
 
-  const [progress, setProgress] = useState(0);
 
   const [saved, setSaved] = useState<{
     session: SavedRecording;
@@ -144,43 +143,6 @@ function LiveRoom() {
     };
   }, [id, role, releaseOverlay]);
 
-  async function upload(recording: {
-    session: SavedRecording;
-    blob: Blob;
-  }) {
-    setPhase("saving");
-    setProgress(0);
-    setError("");
-    busy.current = true;
-
-    try {
-      if (!recording.blob.size) {
-        throw new Error(
-          "No recording frames were captured. Clear the empty recording and start a new interview."
-        );
-      }
-
-      const reviewId = await uploadLiveRecording(
-        id,
-        recording.session.id,
-        recording.blob,
-        setProgress
-      );
-
-      await removeRecording(recording.session.id).catch(() => {});
-
-      setSaved(null);
-      setPhase("ended");
-
-      router.push(`/i/${reviewId}`);
-    } catch (e) {
-      setError((e as Error).message);
-      setPhase("retry");
-    } finally {
-      busy.current = false;
-    }
-  }
-
   async function finish(reason?: string) {
     if (ending.current) {
       return;
@@ -219,14 +181,10 @@ function LiveRoom() {
       setConnected(false);
 
       if (recording && blob) {
-        const result = {
-          session: recording.session,
-          blob,
-        };
-
-        setSaved(result);
-
-        await upload(result);
+        // The recording stays in this browser. The New review page picks it up, pre-filled with
+        // this room's candidate, and starting the review there is what uploads it.
+        setPhase("ended");
+        router.push(`/new?live=${id}`);
       } else {
         setPhase("ended");
       }
@@ -460,7 +418,7 @@ function LiveRoom() {
                   : "Waiting for the other participant"
               }`
             : phase === "saving"
-              ? `Saving recording… ${Math.round(progress * 100)}%`
+              ? "Saving recording…"
               : phase === "joining"
                 ? "Connecting…"
                 : ""}
@@ -513,26 +471,26 @@ function LiveRoom() {
       {(phase === "idle" || phase === "ended") && (
         <section className="max-w-[720px] space-y-4 border-t border-border pt-6">
           <p className="text-[14.5px] leading-relaxed">
-            Your camera, microphone, and any shared screen will be
-            recorded for automated interview review.
-            Shared screens include a subtle visual watermark.
+            {role === "host"
+              ? "Recording starts when you join: both cameras, both microphones, and any shared screen. The candidate confirms their consent before they enter."
+              : "Your camera, microphone, and any shared screen will be recorded for automated interview review. Shared screens include a subtle visual watermark."}
           </p>
 
-          <label className="flex items-start gap-3 text-[14.5px] leading-snug">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-              className="mt-1 size-4 shrink-0 accent-(--accent)"
-            />
-
-            {role === "host"
-              ? "I confirm all participants consent to recording and automated review."
-              : "I consent to recording and automated review of this interview."}
-          </label>
+          {/* The host attested consent when organising the room; only the candidate confirms here. */}
+          {role === "candidate" && (
+            <label className="flex items-start gap-3 text-[14.5px] leading-snug">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 size-4 shrink-0 accent-(--accent)"
+              />
+              I consent to recording and automated review of this interview.
+            </label>
+          )}
 
           <button
-            disabled={!consent || !loaded || phase === "ended"}
+            disabled={(role === "candidate" && !consent) || !loaded || phase === "ended"}
             onClick={join}
             className="btn btn-primary"
           >
@@ -682,9 +640,9 @@ function LiveRoom() {
           </h2>
 
           <p className="text-sm text-muted">
-            Keep this tab open until saving finishes. A recovery copy
-            is kept in this browser until the server accepts the
-            recording.
+            A recording from this room is kept in this browser until its
+            review has been started. Continue to the review form to add
+            documents and start it, or download it.
           </p>
 
           {!!saved.blob.size && (
@@ -695,16 +653,13 @@ function LiveRoom() {
           )}
 
           <div className="flex gap-3">
-            <button
-              disabled={
-                phase === "saving" ||
-                !saved.blob.size
-              }
-              className={button}
-              onClick={() => upload(saved)}
+            <Link
+              href={`/new?live=${id}`}
+              aria-disabled={!saved.blob.size}
+              className={`btn btn-primary ${saved.blob.size ? "" : "pointer-events-none opacity-40"}`}
             >
-              Retry saving review
-            </button>
+              Continue to review
+            </Link>
 
             {!saved.blob.size && (
               <button

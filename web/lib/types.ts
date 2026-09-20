@@ -23,6 +23,7 @@ export interface Interview {
   files: Record<string, string>;
   summary: { flag_count?: number; cv_finding_count?: number; skipped_count?: number; duration_sec?: number };
   feedback: Record<string, Feedback>;
+  consent?: { attested_by: string; attested_at: string; text_version: string };
   error: string | null;
   created_at: string;
 }

@@ -12,10 +12,15 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "un
 
 export const getLiveConfig = () => request<{ iceServers: RTCIceServer[] }>("/live-config");
 
-export async function uploadLiveRecording(id: string, recordingId: string, blob: Blob, progress: (value: number) => void): Promise<string> {
-  const form = new FormData();
-  form.append("recording_id", recordingId); form.append("consent_attested", "true");
-  form.append("recording", blob, blob.type.includes("mp4") ? "interview.mp4" : "interview.webm");
+/**
+ * Sends a live-room recording plus the New review form (documents, conditions, attestation) and
+ * starts the review. `extra` is that form's fields; recording and recording_id are added here.
+ */
+export async function uploadLiveRecording(id: string, recordingId: string, blob: Blob, progress: (value: number) => void, extra?: FormData): Promise<string> {
+  const form = extra ?? new FormData();
+  form.set("recording_id", recordingId);
+  if (!form.has("consent_attested")) form.set("consent_attested", "true");
+  form.set("recording", blob, blob.type.includes("mp4") ? "interview.mp4" : "interview.webm");
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest(); xhr.open("POST", `${API_URL}/live-interviews/${id}/recording`);
     xhr.upload.onprogress = e => { if (e.lengthComputable) progress(e.loaded / e.total); };

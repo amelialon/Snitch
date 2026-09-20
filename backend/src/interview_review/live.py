@@ -4,19 +4,23 @@ import asyncio
 import json
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from .models import Interview
+from .models import Consent, Interview
 from .pipeline import run_pipeline
 from .ports import Deps, load_model, save_model
 
 
 class RecordingReceipt(BaseModel):
     review_id: str
+
+
+_DOCUMENT_TYPES = {'.pdf', '.txt', '.md'}
 
 
 def add_live_routes(app: FastAPI, deps: Deps) -> None:
@@ -94,9 +98,25 @@ def add_live_routes(app: FastAPI, deps: Deps) -> None:
         recording_id: UUID = Form(...),
         consent_attested: bool = Form(False),
         recording: UploadFile = File(...),
+        # The New review form, filled in after the call: documents, conditions and who attests.
+        attested_by: str = Form(''),
+        context_flags: str = Form('{}'),
+        cv: UploadFile | None = File(None),
+        cover_letter: UploadFile | None = File(None),
     ) -> dict:
         if not consent_attested:
             raise HTTPException(400, 'Consent to recording and automated review is required.')
+        try:
+            flags = {str(k): bool(v) for k, v in json.loads(context_flags).items()}
+        except (ValueError, AttributeError):
+            raise HTTPException(400, 'context_flags must be a JSON object of booleans')
+        documents: dict[str, UploadFile] = {}
+        for role, upload in (('cv', cv), ('cover_letter', cover_letter)):
+            if upload is not None and upload.filename:
+                doc_suffix = Path(upload.filename).suffix.lower()
+                if doc_suffix not in _DOCUMENT_TYPES:
+                    raise HTTPException(400, f"Unsupported {role.replace('_', ' ')} type '{doc_suffix}'. Use PDF or plain text.")
+                documents[role] = upload
         try:
             original = store.get_interview(interview_id)
         except ValueError:
@@ -124,20 +144,29 @@ def add_live_routes(app: FastAPI, deps: Deps) -> None:
             review_id = interview_id if not original.files.get('recording') else uuid4().hex[:12]
             name = f'recording-{recording_id}{suffix}'
             store.put_file(review_id, name, recording.file)
+            extra_files = {}
+            for role, upload in documents.items():
+                extra_files[role] = f'{role}{Path(upload.filename or "").suffix.lower()}'
+                store.put_file(review_id, extra_files[role], upload.file)
+            consent = original.consent
+            if attested_by.strip():
+                consent = Consent(attested_by=attested_by.strip(), attested_at=datetime.now(timezone.utc),
+                                  text_version=original.consent.text_version)
             if review_id == interview_id:
                 store.update_interview(review_id, {
-                    'files': original.files | {'recording': name}, 'stage': 'queued',
+                    'files': original.files | {'recording': name} | extra_files, 'stage': 'queued',
                     'status': 'processing', 'progress': 0.0, 'error': None,
+                    'context_flags': flags, 'consent': consent,
                 })
             else:
                 review = Interview(
                     id=review_id, candidate_label=original.candidate_label,
-                    consent=original.consent, context_flags=original.context_flags,
-                    files={'recording': name},
+                    consent=consent, context_flags=flags,
+                    files={'recording': name} | extra_files,
                 )
                 # Preserve optional CV/cover letter without reusing an old transcript/report.
                 for role in ('cv', 'cover_letter'):
-                    if role in original.files:
+                    if role in original.files and role not in extra_files:
                         filename = original.files[role]
                         with store.local_path(interview_id, filename) as path, path.open('rb') as src:
                             store.put_file(review_id, filename, src)

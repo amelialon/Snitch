@@ -6,9 +6,13 @@ A post-interview review tool for recruiters. It analyzes a recorded interview an
 
 Participants join using an invitation link on this app. No external room setup is required.
 The interviewer confirms recording/review consent and starts recording at join. Cameras,
-microphones, and the shared screen are recorded. End interview uploads the video and creates
-a review automatically; failed uploads offer retry, playback, and download. Browser recovery
-copies remain until upload succeeds. Canary/watermark injection controls are removed.
+microphones, and the shared screen are recorded. Ending the interview does not start a review
+by itself: the recording stays in the interviewer's browser and the interviewer lands on the
+New review form, pre-filled with the room's candidate and the recording, to add a CV, cover
+letter and interview conditions. Starting the review from that form uploads the recording with
+those fields onto the same interview record, and transcription and analysis run then. A
+recording left in the browser (upload not started, or failed) can be continued from the room
+or downloaded. Canary/watermark injection controls are removed.
 This change does not modify review signals, corroboration requirements, or candidate decisions.
 
 ## Superseded live screen-sharing prototype (2026-09-19)

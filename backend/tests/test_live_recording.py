@@ -93,3 +93,40 @@ def test_unknown_room_and_role_rejected(fixture):
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(url):
                 pass
+
+
+def test_the_review_form_fields_travel_with_the_recording(fixture):
+    client, room, _ = fixture
+    result = client.post(
+        f'/live-interviews/{room}/recording',
+        data={
+            'recording_id': str(uuid4()), 'consent_attested': 'true',
+            'attested_by': 'recruiter@example.com',
+            'context_flags': '{"notes_permitted": true, "open_book": false}',
+        },
+        files={
+            'recording': ('interview.webm', b'\x1a\x45\xdf\xa3synthetic test container', 'video/webm'),
+            'cv': ('cv.txt', b'ten years of Go', 'text/plain'),
+        },
+    )
+    assert result.status_code == 202
+    interview = client.get(f'/interviews/{room}').json()['interview']
+    assert interview['context_flags'] == {'notes_permitted': True, 'open_book': False}
+    assert interview['consent']['attested_by'] == 'recruiter@example.com'
+    assert interview['files']['cv'] == 'cv.txt'
+    # notes were permitted, so the review says the delivery family was skipped for that reason
+    report = client.get(f'/interviews/{room}').json()['report']
+    assert any(s['signal'] == 'delivery' and 'notes' in s['reason'] for s in report['skipped'])
+
+
+def test_an_unsupported_document_type_is_refused_with_the_recording(fixture):
+    client, room, _ = fixture
+    result = client.post(
+        f'/live-interviews/{room}/recording',
+        data={'recording_id': str(uuid4()), 'consent_attested': 'true'},
+        files={
+            'recording': ('interview.webm', b'\x1a\x45\xdf\xa3synthetic test container', 'video/webm'),
+            'cv': ('cv.exe', b'x', 'application/octet-stream'),
+        },
+    )
+    assert result.status_code == 400

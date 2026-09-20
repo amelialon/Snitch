@@ -1,8 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { createInterview } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { createInterview, getInterview, uploadLiveRecording } from "@/lib/api";
+import { recoverRecording, removeRecording, type SavedRecording } from "@/lib/recording-store";
 
 const CONTEXT_FLAGS = [
   ["notes_permitted", "Notes were permitted", "Reading-style delivery is not counted."],
@@ -27,11 +28,55 @@ function Section({ title, why, accent, children }: { title: string; why?: string
   );
 }
 
-export default function NewReview() {
+export default function NewReviewPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+      <NewReview />
+    </Suspense>
+  );
+}
+
+/** A recording that came from the live room, kept in this browser until the review is created. */
+interface LiveRecording {
+  session: SavedRecording;
+  blob: Blob;
+}
+
+function NewReview() {
   const router = useRouter();
+  // /new?live=<id>: the interview was just filmed in the live room. The form is pre-filled from
+  // the room and its recording, and submitting starts the review on that same interview.
+  const live = useSearchParams().get("live");
+  const [label, setLabel] = useState("");
+  const [attestedBy, setAttestedBy] = useState("");
+  const [recording, setRecording] = useState<LiveRecording | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  const [notice, setNotice] = useState("");
   const [consent, setConsent] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!live) return;
+    let stop = false;
+    getInterview(live)
+      .then(({ interview }) => {
+        if (stop) return;
+        setLabel(interview.candidate_label);
+        setAttestedBy(interview.consent?.attested_by ?? "");
+      })
+      .catch((e: Error) => !stop && setError(e.message));
+    recoverRecording(live)
+      .then((found) => {
+        if (stop) return;
+        if (found && found.blob.size) setRecording(found);
+        else setNotice("No recording from this room is saved in this browser. Choose the recording file to upload instead.");
+      })
+      .catch(() => !stop && setNotice("Could not read the saved recording from this browser. Choose the recording file to upload instead."));
+    return () => {
+      stop = true;
+    };
+  }, [live]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,6 +94,18 @@ export default function NewReview() {
     setError("");
     setProgress(0);
     try {
+      const chosen = form.get("recording");
+      const useSaved = !!live && !!recording && !(chosen instanceof File && chosen.size > 0);
+      if (live && (useSaved || chosen instanceof File)) {
+        // The live room's interview becomes the review: same id, so the list carries on from "live".
+        form.delete("candidate_label");
+        const blob = useSaved ? recording!.blob : (chosen as File);
+        if (useSaved) form.delete("recording");
+        const reviewId = await uploadLiveRecording(live, recording?.session.id ?? crypto.randomUUID(), blob, setProgress, form);
+        if (recording) await removeRecording(recording.session.id).catch(() => {});
+        router.push(`/i/${reviewId}`);
+        return;
+      }
       const interview = await createInterview(form, setProgress);
       router.push(`/i/${interview.id}`);
     } catch (e) {
@@ -73,16 +130,42 @@ export default function NewReview() {
       <header className="max-w-[760px] space-y-2.5 pb-7">
         <h1 className="text-[38px] leading-none">New review</h1>
         <p className="text-[15px] leading-relaxed text-muted">
-          Upload a recorded interview. You get back a few moments worth a second look, with the evidence for each, and you make the call.
+          {live
+            ? "The interview has been recorded. Add anything else that should go into the review, then start it."
+            : "Upload a recorded interview. You get back a few moments worth a second look, with the evidence for each, and you make the call."}
         </p>
+        {notice && <p className="text-[13.5px] text-danger">{notice}</p>}
       </header>
 
-      <Section title="Candidate">
-        <input name="candidate_label" required placeholder="Name or reference" aria-label="Candidate" className={`${field} max-w-[420px]`} />
+      <Section title="Candidate" why={live ? "From the live room." : undefined}>
+        <input
+          name="candidate_label"
+          required
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          readOnly={!!live}
+          placeholder="Name or reference"
+          aria-label="Candidate"
+          className={`${field} max-w-[420px] ${live ? "text-muted" : ""}`}
+        />
       </Section>
 
-      <Section title="Recording" why="Video or audio, up to 2 GB. Without a speech-to-text key configured, upload a transcript .json instead.">
-        <input name="recording" type="file" required accept=".mp4,.webm,.mov,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.json" className={file} />
+      <Section title="Recording" why={recording ? "Recorded in the live room and kept in this browser until the review starts." : "Video or audio, up to 2 GB. Without a speech-to-text key configured, upload a transcript .json instead."}>
+        {recording && !replacing ? (
+          <div className="flex items-center gap-4 rounded-lg border border-dashed border-border bg-surface px-4 py-3.5">
+            <div className="flex-1">
+              <p className="text-[14.5px] font-medium">
+                interview-{live}.{recording.blob.type.includes("mp4") ? "mp4" : "webm"}
+              </p>
+              <p className="font-mono text-[12.5px] text-muted">{(recording.blob.size / 1_000_000).toFixed(1)} MB</p>
+            </div>
+            <button type="button" onClick={() => setReplacing(true)} className="btn btn-ghost h-[34px] px-3 text-[13px]">
+              Replace
+            </button>
+          </div>
+        ) : (
+          <input name="recording" type="file" required={!recording} accept=".mp4,.webm,.mov,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.json" className={file} />
+        )}
       </Section>
 
       <Section title="Documents" why="Optional. Used only to compare spoken claims with what the CV says.">
@@ -120,7 +203,14 @@ export default function NewReview() {
           </label>
           <label className="block max-w-[420px] text-[13px] font-medium">
             Attested by
-            <input name="attested_by" required placeholder="Your name or email" className={`${field} mt-1.5 font-normal`} />
+            <input
+              name="attested_by"
+              required
+              value={attestedBy}
+              onChange={(e) => setAttestedBy(e.target.value)}
+              placeholder="Your name or email"
+              className={`${field} mt-1.5 font-normal`}
+            />
           </label>
         </div>
       </Section>
@@ -129,7 +219,7 @@ export default function NewReview() {
 
       <div className="flex items-center gap-5 border-t border-border pt-7">
         <button type="submit" disabled={!consent || busy} className="btn btn-primary">
-          {storing ? "Storing recording…" : busy ? `Uploading… ${Math.round((progress ?? 0) * 100)}%` : "Upload and review"}
+          {storing ? "Storing recording…" : busy ? `Uploading… ${Math.round((progress ?? 0) * 100)}%` : live ? "Start review" : "Upload and review"}
         </button>
         <span className="text-[13.5px] text-muted">
           {storing
