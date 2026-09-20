@@ -65,6 +65,7 @@ class ReviewConfig(BaseModel):
     ai_score_min: float = 0.8
     ai_score_strong: float = 0.95
     ai_score_margin: float = 0.3
+    ai_score_mixed: float = 0.5  # per-sentence highlight bucket: below this reads as human
     style_fraction: float = 0.6
     style_min_units: int = 4
     max_flags: int = 5

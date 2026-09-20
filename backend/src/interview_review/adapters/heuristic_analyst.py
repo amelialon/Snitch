@@ -10,8 +10,8 @@ import re
 from collections import Counter
 
 from ..models import DepthJudgment, Segmentation, Turn, Unit, UnitView, normalize_word
-from ..narrative import template_narrative
-from ..ports import FlagContext, FlagNarrative
+from ..narrative import template_narrative, template_summary
+from ..ports import FlagContext, FlagNarrative, ReportDigest
 
 _TYPE_PATTERNS: list[tuple[str, str, str]] = [
     ("rapport", "easy", r"how are you|how's your|weekend|weather|find the place|trouble (joining|connecting)|hear me|how was your"),
@@ -94,6 +94,9 @@ class HeuristicAnalyst:
 
     def explain_flags(self, contexts: list[FlagContext]) -> list[FlagNarrative]:
         return [template_narrative(c) for c in contexts]
+
+    def summarize(self, digest: ReportDigest) -> str:
+        return template_summary(digest)
 
 
 def _classify(question: str) -> tuple[str, str]:

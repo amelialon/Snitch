@@ -7,11 +7,13 @@ export function VideoTile({
   audioTrack,
   label,
   muted,
+  contain = false,
 }: {
   videoTrack: MediaStreamTrack | null;
   audioTrack?: MediaStreamTrack | null;
   label: string;
   muted?: boolean;
+  contain?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
 
@@ -24,7 +26,7 @@ export function VideoTile({
 
   return (
     <div className="relative aspect-video overflow-hidden rounded-lg border border-border bg-black">
-      <video ref={ref} autoPlay playsInline muted={muted} className="h-full w-full object-cover" />
+      <video ref={ref} autoPlay playsInline muted={muted} className={`h-full w-full ${contain ? "object-contain" : "object-cover"}`} />
       <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">{label}</span>
       {!videoTrack && <div className="absolute inset-0 grid place-items-center text-xs text-white/60">No video</div>}
     </div>

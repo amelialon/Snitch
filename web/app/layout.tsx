@@ -20,12 +20,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="text-sm font-semibold tracking-tight">
               Interview Review
             </Link>
+            <nav aria-label="Main navigation" className="flex items-center gap-4">
+            <Link href="/live" className="text-sm font-medium hover:underline">Live interviews</Link>
             <Link
               href="/new"
               className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90"
             >
               New review
             </Link>
+            </nav>
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
