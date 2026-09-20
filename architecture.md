@@ -24,32 +24,14 @@ retries. Upload finalization is serialized within the single API worker. Backgro
 is still the existing in-process task model; process failure may require a manual rerun.
 Historical canary record models remain compatible with old reviews; new calls emit no canaries.
 
-The screen-share implementation notes below describe the superseded watermark prototype.
-
-## Live screen-share implementation (2026-09-19)
-
-`web/lib/screen-overlay.ts` owns capture-frame readiness, local pixel analysis and a canvas
-compositor. A 15 fps canvas stream feeds Daily `startScreenShare({mediaStream})`; no CSS overlay
-is relied upon for transmission. An 8×8 candidate search samples the complete padded text
-footprint at a maximum analysis width of 640 pixels every 450 ms. It computes RGB variance,
-luminance, and adjacent-pixel edge density, with hysteresis and smooth movement. These heuristics
-cannot guarantee avoidance of every UI control. Browser background throttling may reduce fps.
-
-`ScreenShare` handles chooser cancellation, SDK readiness/error events, track end/mute, navigation,
-call leave and pending-start cancellation. It persists the identifier before transmission and
-fails closed if that save fails. End-timestamp failures offer retry while the component remains
-mounted; an abrupt tab/process termination can leave the end timestamp absent.
+**Visual canary in the live room.** `web/components/hidden-canary.tsx` renders a tiled hidden instruction
+over the candidate's room (candidate role only, inside the `stage` element so it survives full screen).
+The ink is alpha-blended (`--canary-ink` in `globals.css`: dark on light theme, light on dark theme), so it
+shifts whatever is underneath by about 2 of 255 levels rather than painting an opaque colour that would show
+over a dark video tile. It reaches a vision model only through lossless screenshots; video or JPEG
+compression removes a 2-level difference. It is not in the recording, which is built from media tracks.
 
 `POST /live-interviews` creates a consented, recording-free record with `stage=live`.
-`PUT/GET /interviews/{id}/screen-shares/{uuid}` stores/reads a separate JSON artifact per share;
-identity and settings are immutable and writes are idempotent. `POST .../{uuid}/check` performs
-whole-identifier matching against submitted text, without feeding a verdict into the pipeline.
-Concurrent interviews need distinct Daily room URLs; this demo does not provision Daily rooms.
-
-`/live/calibrate` uses two local RTCPeerConnections with VP8 preference and a 1 Mbps send cap,
-then snapshots the decoded receiver video. It supports blind recovery entry and JSON export.
-It is a local codec check, not an SFU/network/device certification. Remote test procedure and
-observations are in `docs/screen-share-validation.md`.
 
 How the demo system is put together. Product behavior lives in [SPEC.md](SPEC.md); background, glossary, and decisions live in [context.md](context.md).
 
@@ -84,7 +66,7 @@ Deployment shape: `web/` on Vercel; `backend/` as one container on a long-runnin
 | `pipeline.py` | `run_pipeline(interview_id, deps, force=False)`. Never raises; outcome lands on the interview record. | Step order, caching of paid steps, progress updates, which failures are fatal vs. reported as skipped, CV text extraction, narrative fallback, emotion-language guard |
 | `api.py` | HTTP routes (§5) | Upload handling, background execution, media serving, live-session logging |
 | `canary.py` | `check_marker(text, marker)`, and the `QuestionEvent`/`CanaryEvent`/`SessionLog` records | Whole-word marker matching; the append-only live-session log |
-| `ports.py` | The five seams below | — |
+| `ports.py` | The six seams below | — |
 
 `review.py` is the core deep module: one function in, everything the product promises about flags behind it. It is also the primary test surface.
 
@@ -99,8 +81,11 @@ Each seam exists because two adapters really do vary across it.
 | `Analyst` | `segment(turns)`, `judge_depth(parent, follow_ups)`, `explain_flags(contexts)` | `OpenAIAnalyst` (OpenAI Responses API, structured outputs, server-side key) · `HeuristicAnalyst` (rule-based; offline demo + tests) |
 | `AiTextDetector` | `score(text) → float` | `GPTZeroDetector` · none configured → signal reported as skipped |
 | `CvAnalyzer` | `find_inconsistencies(cv_text, units) → [CvFinding]` | `OpenAICvAnalyzer` (OpenAI Responses API, structured outputs, server-side key) · none configured → section reported as skipped |
+| `HiddenPromptJudge` | `judge(instruction, answers) → [HiddenPromptJudgment]` | `OpenAIHiddenPromptJudge` (one batched structured-output call per interview) · none configured → check reported as skipped |
 
-The `Analyst` interface is one method per operation, not a generic `complete(prompt)`: each is independently fakeable and returns one typed shape. CV consistency is its **own seam** (`CvAnalyzer`), separate from the `Analyst` even though both happen to use OpenAI — that separation is what keeps a CV finding from ever creating or strengthening a flag (SPEC §3.6). One `OPENAI_API_KEY` powers both.
+The `Analyst` interface is one method per operation, not a generic `complete(prompt)`: each is independently fakeable and returns one typed shape. The hidden-prompt check is likewise its **own seam** (`HiddenPromptJudge`), outside fusion: it fills the report's `hidden_prompt` box and marks answers in the transcript, and by itself never creates or strengthens a flag. It runs on every review: with the instruction the candidate's page displayed (`Interview.hidden_prompt`, set for live rooms), or, for an upload, the standard `HIDDEN_PROMPT`, in which case the result carries `shown_to_candidate: false` so the UI can say the candidate never saw it. A duplicate upload reuses a stored report only if its `pipeline_version` is current.
+
+CV consistency is its **own seam** (`CvAnalyzer`), separate from the `Analyst` even though both happen to use OpenAI — that separation is what keeps a CV finding from ever creating or strengthening a flag (SPEC §3.6). One `OPENAI_API_KEY` powers both.
 
 With no API keys set, the backend wires the offline adapters and the whole product runs locally against a transcript JSON. The report states which adapters produced it.
 
@@ -113,6 +98,7 @@ With no API keys set, the backend wires the offline adapters and the whole produ
 | 3 | Gather content evidence: AI-text score per answer ≥50 words (incl. baseline answers), depth judgment per unit with follow-ups | `AiTextDetector`, `Analyst.judge_depth` | — | skip that signal, report it |
 | 4 | Review (baseline → signals → fusion) | `review.py` | — | fatal (it's pure; failure = bug) |
 | 5 | CV consistency | `Analyst.find_cv_inconsistencies` | — | skip section, report it |
+| 5b | Hidden prompt (every review; uploads use the standard prompt): did each candidate answer carry out the instruction hidden on their screen | `HiddenPromptJudge.judge` | — | skip the check, report it |
 | 6 | Narratives (explanation, alternatives, verification question per flag) | `Analyst.explain_flags` | — | deterministic template fallback |
 
 Output: one `report.json` (units, signals, flags, CV findings, skipped list, adapter names). Steps 1–2 are cached because they cost money and don't change when thresholds do; everything else re-runs in seconds. Caching is plain overwrite-on-`force`, no versioning.

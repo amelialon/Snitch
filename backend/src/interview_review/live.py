@@ -161,7 +161,7 @@ def add_live_routes(app: FastAPI, deps: Deps) -> None:
             else:
                 review = Interview(
                     id=review_id, candidate_label=original.candidate_label,
-                    consent=consent, context_flags=flags,
+                    consent=consent, context_flags=flags, hidden_prompt=original.hidden_prompt,
                     files={'recording': name} | extra_files,
                 )
                 # Preserve optional CV/cover letter without reusing an old transcript/report.

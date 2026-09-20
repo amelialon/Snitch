@@ -46,11 +46,12 @@ vendor upload small. Without `ffmpeg` it sends the original file instead, so it 
 
 ### Live interviews and screen sharing
 
-Open **Live interviews** and create a room for the candidate, either **Right now** (you land in
-the room) or **Schedule for later** (pick a date and time). A scheduled room exists immediately
-and is listed under Rooms, upcoming first, and as *Scheduled* on the Interviews page; open it any
-time to copy the invitation link. The time is a label for the recruiter, not a gate: nothing stops
-either side joining early or late.
+Open **Live interviews**, create an interview, and copy its invitation link for the candidate.
+Both participants join inside this app; no Daily/Zoom account or external room URL is required.
+The interviewer starts a recorded interview after confirming consent. Both cameras, both
+microphones, and any shared screen are captured. Screen/system audio and audio canaries are excluded.
+Shared screens are sent and recorded as captured. The candidate's own room carries a hidden anti-assistance
+message (see `web/components/hidden-canary.tsx`).
 
 Both participants join inside this app; no Daily/Zoom account or external room URL is required.
 The candidate confirms consent to recording and automated review before joining; the interviewer

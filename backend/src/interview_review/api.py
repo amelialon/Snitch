@@ -14,9 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import AwareDatetime, BaseModel, Field
 
-from .canary import CanaryEvent, MarkerMatch, QuestionEvent, SessionLog, check_marker
+from .canary import HIDDEN_PROMPT, CanaryEvent, MarkerMatch, QuestionEvent, SessionLog, check_marker
 from .models import Consent, Feedback, Interview, Report, Transcript
-from .pipeline import run_pipeline
+from .pipeline import PIPELINE_VERSION, run_pipeline
 from .ports import Deps, load_model, save_model
 
 _RECORDING_TYPES = {".mp4", ".webm", ".mov", ".mkv", ".m4v", ".mp3", ".wav", ".m4a", ".ogg", ".json"}
@@ -46,15 +46,6 @@ class LiveInterviewIn(BaseModel):
     attested_by: str = Field(min_length=1, max_length=200)
     consent_attested: bool = False
     scheduled_for: AwareDatetime | None = None
-
-
-class ScreenShareIn(BaseModel):
-    sharing_session_id: uuid.UUID
-    expected_marker: str = Field(pattern=r"^workingTotal_[a-f0-9]{10}$")
-    started_at: AwareDatetime
-    finished_at: AwareDatetime | None = None
-    opacity: float = Field(ge=0.1, le=0.8)
-    contrast: int = Field(ge=20, le=160)
 
 
 def create_app(deps: Deps | None = None) -> FastAPI:
@@ -98,6 +89,7 @@ def create_app(deps: Deps | None = None) -> FastAPI:
                 "analyst": deps.analyst.name,
                 "detector": deps.detector.name if deps.detector else "none",
                 "cv_analyzer": deps.cv_analyzer.name if deps.cv_analyzer else "none",
+                "hidden_prompt_judge": deps.hidden_prompt_judge.name if deps.hidden_prompt_judge else "none",
             },
         }
 
@@ -145,6 +137,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         )
         cached = _cached_source(interview)
         exact = cached is not None and cached.fingerprints == interview.fingerprints and cached.context_flags == interview.context_flags
+        if exact:
+            # A report from an older pipeline lacks newer checks (e.g. the hidden prompt): recompute it.
+            old = load_model(store, cached.id, "report.json", Report)
+            exact = old is not None and old.pipeline_version == PIPELINE_VERSION
         store.create_interview(interview)
         if exact:
             # Same recording, documents and flags as a finished review: nothing to upload or compute.
@@ -192,40 +188,10 @@ def create_app(deps: Deps | None = None) -> FastAPI:
             id=uuid.uuid4().hex[:12], candidate_label=body.candidate_label.strip(),
             stage="live", scheduled_for=body.scheduled_for,
             consent=Consent(attested_by=body.attested_by.strip(), attested_at=datetime.now(timezone.utc), text_version="live-recording-v1"),
+            hidden_prompt=HIDDEN_PROMPT,  # the candidate's room always displays it
         )
         store.create_interview(interview)
         return interview
-
-    @app.put("/interviews/{interview_id}/screen-shares/{sharing_session_id}")
-    def save_screen_share(interview_id: str, sharing_session_id: uuid.UUID, body: ScreenShareIn) -> dict:
-        existing(interview_id)
-        if body.sharing_session_id != sharing_session_id:
-            raise HTTPException(400, "Sharing session ID mismatch")
-        if body.expected_marker != f"workingTotal_{sharing_session_id.hex[:10]}":
-            raise HTTPException(400, "Marker does not match sharing session ID")
-        name = f"screen-share-{sharing_session_id}.json"
-        previous = load_model(store, interview_id, name, ScreenShareIn)
-        if previous and previous.model_dump(exclude={"finished_at"}) != body.model_dump(exclude={"finished_at"}):
-            raise HTTPException(409, "A sharing session's identifier and settings cannot be changed")
-        if previous and previous.finished_at and previous.finished_at != body.finished_at:
-            raise HTTPException(409, "A finished sharing session cannot be reopened or changed")
-        if body.finished_at and body.finished_at < body.started_at:
-            raise HTTPException(400, "End time precedes start time")
-        save_model(store, interview_id, name, body)
-        return {"ok": True}
-
-    @app.get("/interviews/{interview_id}/screen-shares/{sharing_session_id}")
-    def get_screen_share(interview_id: str, sharing_session_id: uuid.UUID) -> ScreenShareIn:
-        existing(interview_id)
-        share = load_model(store, interview_id, f"screen-share-{sharing_session_id}.json", ScreenShareIn)
-        if share is None:
-            raise HTTPException(404, "No such screen-sharing session")
-        return share
-
-    @app.post("/interviews/{interview_id}/screen-shares/{sharing_session_id}/check")
-    def check_screen_share(interview_id: str, sharing_session_id: uuid.UUID, body: CheckMarkerIn) -> MarkerMatch:
-        share = get_screen_share(interview_id, sharing_session_id)
-        return check_marker(body.answer_text, share.expected_marker)
 
     @app.get("/interviews")
     def list_interviews() -> list[Interview]:

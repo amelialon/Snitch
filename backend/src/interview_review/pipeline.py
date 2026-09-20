@@ -16,22 +16,27 @@ from .models import (
     ContentEvidence,
     CvFinding,
     Flag,
+    HiddenPromptResult,
     Report,
     Segmentation,
     SentenceAiScore,
     Skipped,
     Transcript,
     UnitAiText,
+    UnitHiddenPrompt,
     UnitView,
     normalize_word,
     to_turns,
 )
 from .narrative import build_ai_text_summary, build_cv_alignment, build_delivery_pattern, guarded, guarded_summary, template_narrative, template_summary
+from .canary import HIDDEN_PROMPT
+from .models import HiddenPromptAnswer
 from .ports import Deps, FlagContext, ReportDigest, load_model, save_model
 from .review import resolve_units, review, strip_fillers
 
-PIPELINE_VERSION = "0.1.0"
+PIPELINE_VERSION = "0.2.0"
 _MAX_CV_CHARS = 60_000
+_MIN_HIDDEN_PROMPT_WORDS = 8  # a shorter answer has no room for an analogy
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +82,9 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
             interview.files, interview_id, units, deps, skipped, transcript, segmentation.candidate_speaker
         )
 
+        stage("checking hidden prompt", 0.85)
+        hidden_prompt = _hidden_prompt_check(interview, units, deps, skipped, transcript, segmentation.candidate_speaker)
+
         stage("writing up", 0.9)
         flags = _narrate(result.flags, units, deps)
 
@@ -99,12 +107,14 @@ def run_pipeline(interview_id: str, deps: Deps, *, force: bool = False) -> None:
                 "analyst": deps.analyst.name,
                 "detector": deps.detector.name if deps.detector else "none",
                 "cv_analyzer": deps.cv_analyzer.name if deps.cv_analyzer else "none",
+                "hidden_prompt_judge": deps.hidden_prompt_judge.name if deps.hidden_prompt_judge else "none",
             },
             pipeline_version=PIPELINE_VERSION,
             ai_text_summary=ai_text_summary,
             ai_text=list(evidence.ai_text.values()),
             cv_alignment=cv_alignment,
             delivery_pattern=delivery_pattern,
+            hidden_prompt=hidden_prompt,
             summary_note=summary_note,
         )
         save_model(store, interview_id, "report.json", report)
@@ -235,6 +245,54 @@ def _locate_cv_quote(finding: CvFinding, views: dict[str, UnitView], transcript:
         return finding
     start, end = span
     return finding.model_copy(update={"start": start, "end": end})
+
+
+def _hidden_prompt_check(
+    interview, units: list[UnitView], deps: Deps, skipped: list[Skipped], transcript: Transcript, candidate_speaker: str
+) -> HiddenPromptResult | None:
+    """Which of the candidate's answers carried out the instruction hidden on their screen. Separate from
+    fusion on purpose, like CV consistency: it is shown to the reviewer, and never creates a flag."""
+    # Every review is checked. A recording that did not come from the live room never showed the
+    # instruction, so it is checked against the standard one and the report says it was not shown.
+    instruction = interview.hidden_prompt or HIDDEN_PROMPT
+    if deps.hidden_prompt_judge is None:
+        skipped.append(Skipped(signal="hidden_prompt", reason="no hidden-prompt judge is configured (set OPENAI_API_KEY)"))
+        return None
+
+    # The count is out of every question. An answer too short to carry out the instruction is not sent to
+    # the judge; it counts as a question that did not match.
+    eligible = [u for u in units if len(strip_fillers(u.answer).split()) >= _MIN_HIDDEN_PROMPT_WORDS]
+    try:
+        judgments = deps.hidden_prompt_judge.judge(
+            instruction,
+            [HiddenPromptAnswer(unit_id=u.id, question=u.question, answer=strip_fillers(u.answer)) for u in eligible],
+        ) if eligible else []
+    except Exception as exc:
+        skipped.append(Skipped(signal="hidden_prompt", reason=f"the judge failed: {exc}"))
+        return None
+
+    verdicts = {j.unit_id: j for j in judgments}
+    results: list[UnitHiddenPrompt] = []
+    for unit in units:
+        verdict = verdicts.get(unit.id)
+        if verdict is None:
+            results.append(UnitHiddenPrompt(unit_id=unit.id, followed=False, rationale="Answer too short to carry out the instruction."))
+            continue
+        start = end = None
+        if verdict.followed:
+            words = align.words_in_span(transcript.words, unit.answer_start, unit.answer_end, candidate_speaker)
+            spoken = [w for w in words if normalize_word(w.text) not in FILLERS]
+            span = align.locate_phrase(spoken, verdict.quote) if verdict.quote else None
+            # A quote that cannot be located still marks the answer, just as a whole.
+            start, end = span if span else (unit.answer_start, unit.answer_end)
+        results.append(UnitHiddenPrompt(unit_id=unit.id, followed=verdict.followed, rationale=verdict.rationale, start=start, end=end))
+    return HiddenPromptResult(
+        instruction=instruction,
+        shown_to_candidate=bool(interview.hidden_prompt),
+        checked_count=len(results),
+        matched_count=sum(1 for r in results if r.followed),
+        units=results,
+    )
 
 
 def _summarize(deps: Deps, flags, ai_text_summary, cv_alignment, cv_checked: int, delivery_pattern) -> str:

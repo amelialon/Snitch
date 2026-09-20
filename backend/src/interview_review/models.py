@@ -161,6 +161,42 @@ class DeliveryPattern(BaseModel):
     description: str
 
 
+class HiddenPromptAnswer(BaseModel):
+    """One answer handed to a HiddenPromptJudge."""
+
+    unit_id: str
+    question: str
+    answer: str
+
+
+class HiddenPromptJudgment(BaseModel):
+    """A judge's verdict on one answer: did it carry out the hidden instruction?"""
+
+    unit_id: str
+    followed: bool
+    quote: str = ""  # verbatim words from the answer that show it; used to locate and highlight
+    rationale: str = ""
+
+
+class UnitHiddenPrompt(BaseModel):
+    unit_id: str
+    followed: bool
+    rationale: str = ""
+    start: float | None = None  # located quote when followed, else the whole answer
+    end: float | None = None
+
+
+class HiddenPromptResult(BaseModel):
+    """How many of the candidate's answers carried out the hidden on-screen instruction. Display only:
+    it never creates or strengthens a flag by itself (a single signal never does)."""
+
+    instruction: str
+    shown_to_candidate: bool = True  # False: an uploaded recording, checked against the standard prompt it never saw
+    checked_count: int
+    matched_count: int
+    units: list[UnitHiddenPrompt] = Field(default_factory=list)
+
+
 class ContentEvidence(BaseModel):
     """Evidence gathered from vendors before the pure review. A missing key means not evaluated."""
 
@@ -261,6 +297,7 @@ class Report(BaseModel):
     # Optional: reports written before these existed must still load (reports are immutable).
     cv_alignment: CvAlignment | None = None
     delivery_pattern: DeliveryPattern | None = None
+    hidden_prompt: HiddenPromptResult | None = None
     summary_note: str = ""
 
 
@@ -293,6 +330,7 @@ class Interview(BaseModel):
     consent: Consent
     scheduled_for: datetime | None = None  # live rooms only: when the interview is planned to happen
     files: dict[str, str] = Field(default_factory=dict)  # role -> stored file name
+    hidden_prompt: str | None = None  # the instruction the candidate's page displayed, if any (live room)
     fingerprints: dict[str, str] = Field(default_factory=dict)  # role -> sha256 of the uploaded bytes
     summary: dict[str, float | int | str] = Field(default_factory=dict)
     feedback: dict[str, Feedback] = Field(default_factory=dict)

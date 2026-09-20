@@ -7,7 +7,7 @@ import type { Flag, UnitView, Word } from "@/lib/types";
 export interface HighlightSpan {
   start: number;
   end: number;
-  cls: "ai" | "yellow";
+  cls: "ai" | "mixed";
   title?: string;
 }
 
@@ -20,6 +20,8 @@ interface Props {
   canSeek: boolean;
   onSeek: (seconds: number) => void;
   highlight?: HighlightSpan[];
+  /** Units whose answer carried out the hidden on-screen instruction; each gets a marker. */
+  hiddenPromptUnits?: string[];
 }
 
 /** Consecutive words by one speaker, so each turn can be shown on its own labeled row. */
@@ -34,7 +36,7 @@ function speakerRuns(ws: Word[]): { speaker: string; words: Word[] }[] {
 }
 
 /** The interview, exchange by exchange, with interviewer and candidate turns separated. */
-export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek, highlight }: Props) {
+export function TranscriptPane({ units, words, flags, candidate, current, canSeek, onSeek, highlight, hiddenPromptUnits = [] }: Props) {
   const highlightAt = (start: number) => (highlight ?? []).find((h) => start >= h.start - 0.02 && start < h.end + 0.02);
   const flagged = useMemo(() => {
     const ids = new Set(flags.map((f) => f.unit_id));
@@ -69,19 +71,27 @@ export function TranscriptPane({ units, words, flags, candidate, current, canSee
             key={unit.id}
             ref={isActive ? activeRef : null}
             className={`grid grid-cols-[72px_minmax(0,1fr)] gap-5 py-5 ${
-              unit.parent_id ? "border-t-0 pt-0" : `border-t ${isFlagged ? "border-accent" : "border-border"}`
+              unit.parent_id ? "border-t-0 pt-0" : `border-t ${isFlagged ? "border-ai-red" : "border-border"}`
             } ${isActive ? "bg-mark/40" : ""}`}
           >
-            <div className={`flex flex-col gap-1 pt-[3px] text-[12.5px] ${isFlagged ? "text-accent" : "text-muted"}`}>
+            <div className={`flex flex-col items-start gap-1 pt-[3px] text-[12.5px] ${isFlagged ? "text-ai-red-text" : "text-muted"}`}>
               <button
                 type="button"
                 disabled={!canSeek}
                 onClick={() => onSeek(unit.question_start)}
-                className={`text-left font-mono enabled:hover:text-accent ${isFlagged ? "font-medium" : ""}`}
+                className={`text-left font-mono ${isFlagged ? "font-medium enabled:hover:text-ai-red" : "enabled:hover:text-accent"}`}
               >
                 {clock(unit.question_start)}
               </button>
               <span>{unit.parent_id ? "follow-up" : isFlagged ? "worth a look" : kind}</span>
+              {hiddenPromptUnits.includes(unit.id) && (
+                <span
+                  title="This answer carried out the instruction hidden on the candidate's screen."
+                  className="rounded bg-ai-red-soft px-1.5 py-0.5 text-[11px] font-medium leading-tight text-ai-red-text"
+                >
+                  hidden prompt
+                </span>
+              )}
             </div>
 
             <div className={unit.parent_id ? "border-l border-border pl-[22px]" : ""}>
@@ -96,7 +106,7 @@ export function TranscriptPane({ units, words, flags, candidate, current, canSee
                     </span>
                     <p
                       className={`m-0 text-[15.5px] leading-[1.65] ${isCandidate ? "" : "text-muted"} ${
-                        isCandidate && isFlagged && !unit.parent_id ? "-ml-[17px] pl-3.5 shadow-[inset_3px_0_0_var(--mark-strong)]" : ""
+                        isCandidate && isFlagged && !unit.parent_id ? "-ml-[17px] pl-3.5 shadow-[inset_3px_0_0_var(--ai-red)]" : ""
                       }`}
                     >
                       {run.words.map((word) => {
@@ -107,14 +117,15 @@ export function TranscriptPane({ units, words, flags, candidate, current, canSee
                           ? "rounded-sm bg-accent px-0.5 text-accent-fg"
                           : hit
                             ? hit.cls === "ai"
-                              ? "bg-hl-ai text-hl-ai-text [box-decoration-break:clone]"
-                              : "bg-hl-warn text-hl-warn-text [box-decoration-break:clone]"
+                              ? "rounded-[3px] bg-hl-ai [box-decoration-break:clone]"
+                              : "rounded-[3px] bg-hl-mixed [box-decoration-break:clone]"
                             : "";
                         return (
                           <span
                             key={word.start}
                             onClick={canSeek ? () => onSeek(word.start) : undefined}
                             title={hit?.title}
+                            data-highlighted={hit ? "" : undefined}
                             className={`${canSeek ? "cursor-pointer hover:underline" : ""} ${wordClass}`}
                           >
                             {word.text}{" "}

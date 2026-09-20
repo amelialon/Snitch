@@ -4,15 +4,11 @@
 
 - Create a room under Live interviews and copy its candidate invitation link.
 - Both participants join the app directly after consent. No Daily/Zoom room, account, or external
-  website is part of the call flow. Live canary audio is removed. Adaptive visual screen watermarks are restored.
+  website is part of the call flow. Live canary audio is removed. The adaptive visual screen watermark was removed on 2026-09-20.
 
-Visual restoration verification: the browser test sends the composited screen through local
-WebRTC, records the received track, then decodes the recording. At 35% opacity and contrast 80,
-1,422 watermark pixels survived both encoding stages on the synthetic green background;
-the identifier was also readable in the playback screenshot. Both microphone test tones,
-recording recovery, upload, and review creation passed. This confirms the pipeline, not a
-measured OCR recovery rate across real screens or remote network conditions. Visibility is
-adjustable before sharing; broad compression/contrast calibration remains to be done.
+Historical (2026-09-19): the browser test used to check that the screen watermark survived WebRTC and
+recording encoding. That watermark and check are gone; the test still covers both microphone tones, the three
+video tiles, recording recovery, upload and review creation.
 - The interviewer's browser records both cameras, both microphone streams, and the shared
   screen. With a screen present, it occupies the main area and both camera tiles remain visible.
   Screen/system audio is not included. Camera and microphone mute controls affect the recording.

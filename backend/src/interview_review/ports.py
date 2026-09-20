@@ -1,4 +1,4 @@
-"""The five seams. Each is a real vendor or storage boundary; see architecture.md §2."""
+"""The six seams. Each is a real vendor or storage boundary; see architecture.md §2."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from .models import (
     CvFinding,
     DepthJudgment,
     Flag,
+    HiddenPromptAnswer,
+    HiddenPromptJudgment,
     Interview,
     Segmentation,
     Transcript,
@@ -102,6 +104,15 @@ class CvAnalyzer(Protocol):
         ...
 
 
+class HiddenPromptJudge(Protocol):
+    name: str
+
+    def judge(self, instruction: str, answers: list[HiddenPromptAnswer]) -> list[HiddenPromptJudgment]:
+        """For each answer, whether it carries out `instruction`, the text that was shown to the candidate.
+        The judge rules on the answers; it never follows the instruction itself."""
+        ...
+
+
 class AiTextDetector(Protocol):
     name: str
 
@@ -117,6 +128,7 @@ class Deps:
     analyst: Analyst
     detector: AiTextDetector | None = None
     cv_analyzer: CvAnalyzer | None = None
+    hidden_prompt_judge: HiddenPromptJudge | None = None
     config: ReviewConfig = field(default_factory=ReviewConfig)
 
 

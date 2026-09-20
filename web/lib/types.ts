@@ -97,6 +97,24 @@ export interface DeliveryPattern {
   description: string;
 }
 
+export interface UnitHiddenPrompt {
+  unit_id: string;
+  followed: boolean;
+  rationale: string;
+  start: number | null;
+  end: number | null;
+}
+
+/** How many answers carried out the instruction hidden on the candidate's screen. */
+export interface HiddenPromptResult {
+  instruction: string;
+  /** false: an uploaded recording, checked against the standard prompt it was never shown. */
+  shown_to_candidate?: boolean;
+  checked_count: number;
+  matched_count: number;
+  units: UnitHiddenPrompt[];
+}
+
 export interface UnitView {
   id: string;
   parent_id: string | null;
@@ -123,6 +141,7 @@ export interface Report {
   ai_text: UnitAiText[];
   cv_alignment: CvAlignment | null;
   delivery_pattern: DeliveryPattern | null;
+  hidden_prompt?: HiddenPromptResult | null;
   summary_note: string;
 }
 

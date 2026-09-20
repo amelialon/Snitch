@@ -41,7 +41,7 @@ def build_deps() -> Deps:
 
         analyst = HeuristicAnalyst()
 
-    detector = cv_analyzer = None
+    detector = cv_analyzer = hidden_prompt_judge = None
     if env("GPTZERO_API_KEY"):
         from .adapters.gptzero import GPTZeroDetector
 
@@ -51,4 +51,15 @@ def build_deps() -> Deps:
 
         cv_analyzer = OpenAICvAnalyzer(model=openai_model)
 
-    return Deps(store=store, transcriber=transcriber, analyst=analyst, detector=detector, cv_analyzer=cv_analyzer)
+        from .adapters.openai_hidden_prompt_judge import OpenAIHiddenPromptJudge
+
+        hidden_prompt_judge = OpenAIHiddenPromptJudge(model=openai_model)
+
+    return Deps(
+        store=store,
+        transcriber=transcriber,
+        analyst=analyst,
+        detector=detector,
+        cv_analyzer=cv_analyzer,
+        hidden_prompt_judge=hidden_prompt_judge,
+    )

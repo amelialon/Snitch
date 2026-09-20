@@ -16,11 +16,15 @@
   --danger: #a3341f;
   --flag-ai: #e3ddfb;
   --flag-ai-text: #2e2490;
-  /* transcript highlights: deep lavender reads as generated, light as mixed / other evidence */
-  --hl-warn: #f1eefc;
-  --hl-warn-text: #1f1e1b;
-  --hl-ai: #e3ddfb;
-  --hl-ai-text: #1f1e1b;
+  /* transcript highlighter: red marks AI-generated text (and the other evidence types); lighter red is "mixed" */
+  --hl-ai: rgb(255 59 48 / 0.32);
+  --hl-mixed: rgb(255 59 48 / 0.16);
+  /* red = AI-generated / AI-influenced: flagged ranges, hidden-prompt matches, AI-text highlights */
+  --ai-red: #d92d20;
+  --ai-red-soft: #fdecea;
+  --ai-red-text: #a3251b;
+  /* hidden visual canary ink: about 2 of 255 levels off whatever it sits on (dark ink on light, light on dark) */
+  --canary-ink: rgb(0 0 0 / 0.0082);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,10 +43,12 @@
     --danger: #f08b76;
     --flag-ai: #2e2a4d;
     --flag-ai-text: #c9c0fb;
-    --hl-warn: #24213a;
-    --hl-warn-text: #ecebe6;
-    --hl-ai: #3a3468;
-    --hl-ai-text: #ecebe6;
+    --hl-ai: rgb(255 90 77 / 0.5);
+    --hl-mixed: rgb(255 90 77 / 0.26);
+    --ai-red: #ff5a4d;
+    --ai-red-soft: #3a1b19;
+    --ai-red-text: #ffb4ab;
+    --canary-ink: rgb(255 255 255 / 0.0084);
   }
 }
 
@@ -61,10 +67,11 @@
   --color-danger: var(--danger);
   --color-flag-ai: var(--flag-ai);
   --color-flag-ai-text: var(--flag-ai-text);
-  --color-hl-warn: var(--hl-warn);
-  --color-hl-warn-text: var(--hl-warn-text);
   --color-hl-ai: var(--hl-ai);
-  --color-hl-ai-text: var(--hl-ai-text);
+  --color-hl-mixed: var(--hl-mixed);
+  --color-ai-red: var(--ai-red);
+  --color-ai-red-soft: var(--ai-red-soft);
+  --color-ai-red-text: var(--ai-red-text);
   --font-sans: var(--font-jakarta);
   --font-mono: var(--font-dm-mono);
   --font-display: var(--font-outfit);
@@ -85,6 +92,10 @@ h1 {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.canary-layer {
+  color: var(--canary-ink);
 }
 
 /* Shared control styles, so every page presses and hovers the same way. */

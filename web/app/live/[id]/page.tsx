@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { getInterview, getLiveConfig, saveVisualMarker } from "@/lib/api";
-import { CallStage } from "@/components/call-stage";
-import { ScreenOverlay, type VisualMarker } from "@/lib/screen-overlay";
+import { getLiveConfig } from "@/lib/api";
 import { LiveCall, type CallTracks } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
 import {
@@ -13,6 +11,8 @@ import {
   removeRecording,
   type SavedRecording,
 } from "@/lib/recording-store";
+import { VideoTile } from "@/components/video-tile";
+import { HiddenCanary } from "@/components/hidden-canary";
 
 type Phase = "idle" | "joining" | "live" | "saving" | "retry" | "ended";
 
@@ -38,13 +38,10 @@ function LiveRoom() {
   const recorder = useRef<InterviewRecorder | null>(null);
   const source = useRef<MediaStream | null>(null);
   const screen = useRef<MediaStream | null>(null);
-  const overlay = useRef<ScreenOverlay | null>(null);
-  const marker = useRef<VisualMarker | null>(null);
   const shareGeneration = useRef(0);
   const shareStarting = useRef(false);
-  const [markerText, setMarkerText] = useState("");
-  const [opacity, setOpacity] = useState(.35);
 
+  const stage = useRef<HTMLDivElement | null>(null);
   const ending = useRef(false);
   const mounted = useRef(true);
   const busy = useRef(false);
@@ -67,9 +64,6 @@ function LiveRoom() {
 
   const [connected, setConnected] = useState(false);
   const [micOn, setMicOn] = useState(true);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [candidateName, setCandidateName] = useState("Candidate");
-  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(true);
 
 
@@ -82,22 +76,11 @@ function LiveRoom() {
     async () => {}
   );
 
-  const releaseOverlay = useCallback(() => {
+  // Invalidates any share that is still starting, so a late getDisplayMedia result is discarded.
+  const cancelPendingShare = useCallback(() => {
     shareGeneration.current++;
     shareStarting.current = false;
-    overlay.current?.stop();
-    overlay.current = null;
-    const completed = marker.current;
-    marker.current = null;
-    if (completed) void saveVisualMarker(id, { ...completed, finished_at: new Date().toISOString() })
-      .catch(() => { if (mounted.current) setError("Screen sharing stopped, but its watermark end time could not be saved."); });
-  }, [id]);
-
-  useEffect(() => {
-    getInterview(id)
-      .then(({ interview }) => { setCandidateName(interview.candidate_label); setScheduledFor(interview.scheduled_for ?? null); })
-      .catch(() => {});
-  }, [id]);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -142,14 +125,14 @@ function LiveRoom() {
       void recorder.current?.stop();
       recorder.current = null;
 
-      releaseOverlay();
+      cancelPendingShare();
       screen.current?.getTracks().forEach((track) => track.stop());
 
       call.current?.leave();
 
       source.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [id, role, releaseOverlay]);
+  }, [id, role, cancelPendingShare]);
 
   async function finish(reason?: string) {
     if (ending.current) {
@@ -171,8 +154,7 @@ function LiveRoom() {
     try {
       const blob = recording ? await recording.stop() : null;
 
-      releaseOverlay();
-      setMarkerText("");
+      cancelPendingShare();
       setSharePending(false);
       screen.current?.getTracks().forEach((track) => track.stop());
       screen.current = null;
@@ -295,7 +277,6 @@ function LiveRoom() {
 
       if (!ending.current) {
         setPhase("live");
-        setStartedAt(Date.now());
 
         setNotice(
           role === "host"
@@ -337,8 +318,7 @@ function LiveRoom() {
   }
 
   async function stopShare() {
-    releaseOverlay();
-    setMarkerText("");
+    cancelPendingShare();
     setSharePending(false);
     screen.current?.getTracks().forEach((track) => track.stop());
 
@@ -371,24 +351,15 @@ function LiveRoom() {
         return;
       }
 
-      const compositor = new ScreenOverlay(captured, () => { if (current()) void stopShare(); });
-      overlay.current = compositor;
-      const output = await compositor.start(opacity);
-      if (!current()) { compositor.stop(); return; }
-      const created = compositor.marker!;
-      await saveVisualMarker(id, created);
-      if (!current()) {
-        compositor.stop();
-        await saveVisualMarker(id, { ...created, finished_at: new Date().toISOString() });
-        return;
-      }
-      marker.current = created;
-      screen.current = output;
-      const track = output.getVideoTracks()[0];
+      const track = captured.getVideoTracks()[0];
+      // The browser's own "Stop sharing" button ends the track.
+      track.addEventListener("ended", () => {
+        if (current()) void stopShare();
+      });
+      screen.current = captured;
       await call.current.share(track);
       if (!current()) return;
       setSharing(track);
-      setMarkerText(created.expected_marker);
     } catch (e) {
       if (current()) {
         await stopShare();
@@ -418,12 +389,18 @@ function LiveRoom() {
         <h1 className="text-4xl leading-none">Live interview</h1>
 
         <span role="status" className="text-[13.5px] text-muted">
-          {phase === "saving"
-            ? "Saving recording…"
-            : phase === "ended"
-              ? "Ended"
-              : scheduledFor
-                ? `Scheduled for ${new Date(scheduledFor).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+          {phase === "live"
+            ? `${
+                role === "host" ? "● Recording · " : ""
+              }${
+                connected
+                  ? "Connected"
+                  : "Waiting for the other participant"
+              }`
+            : phase === "saving"
+              ? "Saving recording…"
+              : phase === "joining"
+                ? "Connecting…"
                 : ""}
         </span>
       </div>
@@ -476,7 +453,7 @@ function LiveRoom() {
           <p className="text-[14.5px] leading-relaxed">
             {role === "host"
               ? "Recording starts when you join: both cameras, both microphones, and any shared screen. The candidate confirms their consent before they enter."
-              : "Your camera, microphone, and any shared screen will be recorded for automated interview review. Shared screens include a subtle visual watermark."}
+              : "Your camera, microphone, and any shared screen will be recorded for automated interview review. This interview may include measures to detect the use of unauthorized real-time assistance tools."}
           </p>
 
           {/* The host attested consent when organising the room; only the candidate confirms here. */}
@@ -488,7 +465,8 @@ function LiveRoom() {
                 onChange={(e) => setConsent(e.target.checked)}
                 className="mt-1 size-4 shrink-0 accent-(--accent)"
               />
-              I consent to recording and automated review of this interview.
+              I consent to recording and automated review of this interview, including measures to detect unauthorized
+              real-time assistance.
             </label>
           )}
 
@@ -510,56 +488,122 @@ function LiveRoom() {
         </section>
       )}
 
-      {(phase === "live" || phase === "joining" || phase === "saving") && (
-        <>
-          <CallStage
-            role={role}
-            otherName={role === "host" ? candidateName : "Interviewer"}
-            phase={phase}
-            connected={connected}
-            local={local}
-            remote={remote}
-            sharing={sharing}
-            sharePending={sharePending}
-            micOn={micOn}
-            cameraOn={cameraOn}
-            startedAt={startedAt}
-            inviteLink={role === "host" && typeof window !== "undefined" ? `${window.location.origin}/live/${id}?role=candidate` : undefined}
-            onCopyInvite={async () => {
-              const link = `${window.location.origin}/live/${id}?role=candidate`;
-              try {
-                await navigator.clipboard.writeText(link);
-                setNotice("Invitation link copied. Send it to the candidate.");
-              } catch {
-                setNotice(`Invitation link: ${link}`);
+      {(phase === "live" || phase === "joining") && (
+        <div ref={stage} className="space-y-3 bg-bg">
+          {/* Inside the stage so it stays on screen in full screen. Only after the candidate's consent (they cannot reach this without it). */}
+          {role === "candidate" && <HiddenCanary />}
+          {(sharing || remote.screen) && (
+            <VideoTile
+              videoTrack={sharing ?? remote.screen}
+              label={
+                sharing
+                  ? "Your shared screen"
+                  : "Shared screen"
               }
-            }}
-            onToggleMic={() => {
-              source.current?.getAudioTracks().forEach((track) => {
-                track.enabled = !micOn;
-              });
-              setMicOn(!micOn);
-            }}
-            onToggleCamera={() => {
-              source.current?.getVideoTracks().forEach((track) => {
-                track.enabled = !cameraOn;
-              });
-              setCameraOn(!cameraOn);
-            }}
-            onShare={sharing ? stopShare : startShare}
-            onEnd={() => finish()}
-          />
+              muted
+              contain
+            />
+          )}
 
-          {phase === "live" && role === "host" && (
-            <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
-              <label className="flex items-center gap-3">
-                Watermark visibility {Math.round(opacity * 100)}%
-                <input aria-label="Visual watermark visibility" type="range" min="0.1" max="0.8" step="0.05" value={opacity} disabled={sharePending || !!sharing} onChange={e => setOpacity(Number(e.target.value))} className="accent-(--accent)" />
-              </label>
-              {markerText && <span role="status">Watermark active: <code className="font-mono">{markerText}</code>, included in the shared video and recording.</span>}
+          <div className="grid gap-3 md:grid-cols-2">
+            <VideoTile
+              videoTrack={cameraOn ? local : null}
+              label={
+                role === "host"
+                  ? "You · interviewer"
+                  : "You · candidate"
+              }
+              muted
+            />
+
+            <VideoTile
+              videoTrack={remote.camera}
+              audioTrack={remote.audio}
+              label={
+                role === "host"
+                  ? "Candidate"
+                  : "Interviewer"
+              }
+            />
+          </div>
+
+          {phase === "live" && (
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <button
+                className={button}
+                onClick={() => {
+                  source.current
+                    ?.getAudioTracks()
+                    .forEach((track) => {
+                      track.enabled = !micOn;
+                    });
+
+                  setMicOn(!micOn);
+                }}
+              >
+                {micOn
+                  ? "Mute microphone"
+                  : "Unmute microphone"}
+              </button>
+
+              <button
+                className={button}
+                onClick={() => {
+                  source.current
+                    ?.getVideoTracks()
+                    .forEach((track) => {
+                      track.enabled = !cameraOn;
+                    });
+
+                  setCameraOn(!cameraOn);
+                }}
+              >
+                {cameraOn
+                  ? "Turn camera off"
+                  : "Turn camera on"}
+              </button>
+
+              <button
+                disabled={sharePending}
+                className={button}
+                onClick={
+                  sharing
+                    ? stopShare
+                    : startShare
+                }
+              >
+                {sharePending
+                  ? "Choosing screen…"
+                  : sharing
+                    ? "Stop sharing"
+                    : "Share screen"}
+              </button>
+
+              <button
+                className={button}
+                onClick={() => {
+                  const el = stage.current;
+                  if (!el) return;
+                  if (document.fullscreenElement === el) document.exitFullscreen().catch(() => {});
+                  else el.requestFullscreen().catch(() => {});
+                }}
+              >
+                Full screen
+              </button>
+
+              <div className="flex-1" />
+
+              <button
+                className="btn btn-primary"
+                onClick={() => finish()}
+              >
+                {role === "host"
+                  ? "End interview"
+                  : "Leave interview"}
+              </button>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {saved && (
