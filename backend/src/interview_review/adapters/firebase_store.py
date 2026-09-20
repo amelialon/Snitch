@@ -53,7 +53,10 @@ class FirebaseStore:
         self._docs.document(interview_id).delete()
 
     def put_file(self, interview_id: str, name: str, src: BinaryIO) -> None:
-        self._blob(interview_id, name).upload_from_file(src)
+        # Recordings are large and venue networks are slow: small resumable chunks, patient timeout.
+        blob = self._blob(interview_id, name)
+        blob.chunk_size = 8 * 1024 * 1024
+        blob.upload_from_file(src, timeout=600)
 
     def has_file(self, interview_id: str, name: str) -> bool:
         return self._blob(interview_id, name).exists()
