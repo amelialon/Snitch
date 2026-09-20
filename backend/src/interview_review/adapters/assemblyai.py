@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
 import httpx
 
 from ..models import Transcript, Word
+from .audio import mp3_for_transcription
 
 _BASE = "https://api.assemblyai.com/v2"
 
@@ -21,6 +23,11 @@ class AssemblyAITranscriber:
         self._timeout = timeout_seconds
 
     def transcribe(self, path: Path) -> Transcript:
+        with tempfile.TemporaryDirectory() as workdir:
+            # Only the vendor copy is shrunk to MP3; the stored recording is untouched.
+            return self._transcribe(mp3_for_transcription(path, Path(workdir)))
+
+    def _transcribe(self, path: Path) -> Transcript:
         with httpx.Client(headers=self._headers, timeout=httpx.Timeout(60.0, write=None, read=300.0)) as http:
             with path.open("rb") as media:
                 upload = http.post(f"{_BASE}/upload", content=media)

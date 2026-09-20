@@ -40,6 +40,10 @@ cd web && npm install && npm run dev                            # app on :3000
 
 Upload a recording (or a transcript `.json`) plus an optional CV, and review the result.
 
+The full recording is stored as uploaded. For transcription only, the backend first converts a copy to a
+small speech-quality MP3 with `ffmpeg` (`brew install ffmpeg` / `apt install ffmpeg`), which keeps the
+vendor upload small. Without `ffmpeg` it sends the original file instead, so it still works, just slower.
+
 ### Live interviews and screen sharing
 
 Open **Live interviews**, create an interview, and copy its invitation link for the candidate.

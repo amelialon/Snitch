@@ -135,6 +135,8 @@ Interview-level pass: a signal anomalous in most eligible answers is treated as 
 
 Post-demo signals (prosody via audio, gaze via video, canary) emit the same `Signal` shape and plug into fusion unchanged.
 
+The stored recording is never altered. `adapters/audio.py` makes a mono 16 kHz MP3 copy (ffmpeg, padded so it shares the video's timeline) that only the AssemblyAI upload uses; without ffmpeg the original is sent.
+
 ## 4. Data
 
 ```
