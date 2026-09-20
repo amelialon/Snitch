@@ -63,6 +63,11 @@ class LocalStore:
     def has_file(self, interview_id: str, name: str) -> bool:
         return self._file(interview_id, name).exists()
 
+    def copy_file(self, src_id: str, dst_id: str, name: str) -> None:
+        dst = self._file(dst_id, name)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(self._file(src_id, name), dst)
+
     @contextmanager
     def local_path(self, interview_id: str, name: str) -> Iterator[Path]:
         path = self._file(interview_id, name)

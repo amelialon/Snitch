@@ -65,6 +65,9 @@ class FirebaseStore:
     def has_file(self, interview_id: str, name: str) -> bool:
         return self._blob(interview_id, name).exists()
 
+    def copy_file(self, src_id: str, dst_id: str, name: str) -> None:
+        self._bucket.copy_blob(self._blob(src_id, name), self._bucket, f"interviews/{dst_id}/{name}")
+
     @contextmanager
     def local_path(self, interview_id: str, name: str) -> Iterator[Path]:
         with tempfile.TemporaryDirectory() as tmp:

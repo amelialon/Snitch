@@ -45,6 +45,18 @@ def test_files_round_trip_and_disappear_on_delete(store):
     assert not store.has_file("i1", "cv.txt")
 
 
+def test_files_can_be_copied_between_interviews(store):
+    store.create_interview(interview("a"))
+    store.create_interview(interview("b"))
+    store.put_file("a", "cv.txt", io.BytesIO(b"ten years of Go"))
+
+    store.copy_file("a", "b", "cv.txt")
+
+    with store.local_path("b", "cv.txt") as path:
+        assert path.read_bytes() == b"ten years of Go"
+    assert store.has_file("a", "cv.txt")
+
+
 def test_newest_interviews_are_listed_first(store):
     store.create_interview(interview("older"))
     store.create_interview(interview("newer"))
