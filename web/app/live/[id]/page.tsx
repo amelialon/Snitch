@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { getLiveConfig } from "@/lib/api";
+import { getInterview, getLiveConfig } from "@/lib/api";
 import { LiveCall, type CallTracks } from "@/lib/live-call";
 import { InterviewRecorder } from "@/lib/interview-recorder";
 import {
@@ -11,7 +11,7 @@ import {
   removeRecording,
   type SavedRecording,
 } from "@/lib/recording-store";
-import { VideoTile } from "@/components/video-tile";
+import { CallStage } from "@/components/call-stage";
 import { HiddenCanary } from "@/components/hidden-canary";
 
 type Phase = "idle" | "joining" | "live" | "saving" | "retry" | "ended";
@@ -41,7 +41,6 @@ function LiveRoom() {
   const shareGeneration = useRef(0);
   const shareStarting = useRef(false);
 
-  const stage = useRef<HTMLDivElement | null>(null);
   const ending = useRef(false);
   const mounted = useRef(true);
   const busy = useRef(false);
@@ -65,7 +64,9 @@ function LiveRoom() {
   const [connected, setConnected] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
-
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [candidateName, setCandidateName] = useState("Candidate");
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
 
   const [saved, setSaved] = useState<{
     session: SavedRecording;
@@ -116,6 +117,14 @@ function LiveRoom() {
     };
 
     window.addEventListener("beforeunload", protect);
+
+    getInterview(id)
+      .then(({ interview }) => {
+        if (!mounted.current) return;
+        setCandidateName(interview.candidate_label);
+        setScheduledFor(interview.scheduled_for ?? null);
+      })
+      .catch(() => {});
 
     return () => {
       mounted.current = false;
@@ -277,6 +286,7 @@ function LiveRoom() {
 
       if (!ending.current) {
         setPhase("live");
+        setStartedAt(Date.now());
 
         setNotice(
           role === "host"
@@ -389,18 +399,12 @@ function LiveRoom() {
         <h1 className="text-4xl leading-none">Live interview</h1>
 
         <span role="status" className="text-[13.5px] text-muted">
-          {phase === "live"
-            ? `${
-                role === "host" ? "● Recording · " : ""
-              }${
-                connected
-                  ? "Connected"
-                  : "Waiting for the other participant"
-              }`
-            : phase === "saving"
-              ? "Saving recording…"
-              : phase === "joining"
-                ? "Connecting…"
+          {phase === "saving"
+            ? "Saving recording…"
+            : phase === "ended"
+              ? "Ended"
+              : phase === "idle" && scheduledFor
+                ? `Scheduled for ${new Date(scheduledFor).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
                 : ""}
         </span>
       </div>
@@ -488,122 +492,47 @@ function LiveRoom() {
         </section>
       )}
 
-      {(phase === "live" || phase === "joining") && (
-        <div ref={stage} className="space-y-3 bg-bg">
+      {(phase === "live" || phase === "joining" || phase === "saving") && (
+        <CallStage
+          role={role}
+          otherName={role === "host" ? candidateName : "Interviewer"}
+          phase={phase}
+          connected={connected}
+          local={local}
+          remote={remote}
+          sharing={sharing}
+          sharePending={sharePending}
+          micOn={micOn}
+          cameraOn={cameraOn}
+          startedAt={startedAt}
+          inviteLink={role === "host" && typeof window !== "undefined" ? `${window.location.origin}/live/${id}?role=candidate` : undefined}
+          onCopyInvite={async () => {
+            const link = `${window.location.origin}/live/${id}?role=candidate`;
+            try {
+              await navigator.clipboard.writeText(link);
+              setNotice("Invitation link copied. Send it to the candidate.");
+            } catch {
+              setNotice(`Invitation link: ${link}`);
+            }
+          }}
+          onToggleMic={() => {
+            source.current?.getAudioTracks().forEach((track) => {
+              track.enabled = !micOn;
+            });
+            setMicOn(!micOn);
+          }}
+          onToggleCamera={() => {
+            source.current?.getVideoTracks().forEach((track) => {
+              track.enabled = !cameraOn;
+            });
+            setCameraOn(!cameraOn);
+          }}
+          onShare={sharing ? stopShare : startShare}
+          onEnd={() => finish()}
+        >
           {/* Inside the stage so it stays on screen in full screen. Only after the candidate's consent (they cannot reach this without it). */}
           {role === "candidate" && <HiddenCanary />}
-          {(sharing || remote.screen) && (
-            <VideoTile
-              videoTrack={sharing ?? remote.screen}
-              label={
-                sharing
-                  ? "Your shared screen"
-                  : "Shared screen"
-              }
-              muted
-              contain
-            />
-          )}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <VideoTile
-              videoTrack={cameraOn ? local : null}
-              label={
-                role === "host"
-                  ? "You · interviewer"
-                  : "You · candidate"
-              }
-              muted
-            />
-
-            <VideoTile
-              videoTrack={remote.camera}
-              audioTrack={remote.audio}
-              label={
-                role === "host"
-                  ? "Candidate"
-                  : "Interviewer"
-              }
-            />
-          </div>
-
-          {phase === "live" && (
-            <div className="flex flex-wrap items-center gap-2 pt-2">
-              <button
-                className={button}
-                onClick={() => {
-                  source.current
-                    ?.getAudioTracks()
-                    .forEach((track) => {
-                      track.enabled = !micOn;
-                    });
-
-                  setMicOn(!micOn);
-                }}
-              >
-                {micOn
-                  ? "Mute microphone"
-                  : "Unmute microphone"}
-              </button>
-
-              <button
-                className={button}
-                onClick={() => {
-                  source.current
-                    ?.getVideoTracks()
-                    .forEach((track) => {
-                      track.enabled = !cameraOn;
-                    });
-
-                  setCameraOn(!cameraOn);
-                }}
-              >
-                {cameraOn
-                  ? "Turn camera off"
-                  : "Turn camera on"}
-              </button>
-
-              <button
-                disabled={sharePending}
-                className={button}
-                onClick={
-                  sharing
-                    ? stopShare
-                    : startShare
-                }
-              >
-                {sharePending
-                  ? "Choosing screen…"
-                  : sharing
-                    ? "Stop sharing"
-                    : "Share screen"}
-              </button>
-
-              <button
-                className={button}
-                onClick={() => {
-                  const el = stage.current;
-                  if (!el) return;
-                  if (document.fullscreenElement === el) document.exitFullscreen().catch(() => {});
-                  else el.requestFullscreen().catch(() => {});
-                }}
-              >
-                Full screen
-              </button>
-
-              <div className="flex-1" />
-
-              <button
-                className="btn btn-primary"
-                onClick={() => finish()}
-              >
-                {role === "host"
-                  ? "End interview"
-                  : "Leave interview"}
-              </button>
-            </div>
-          )}
-        </div>
+        </CallStage>
       )}
 
       {saved && (

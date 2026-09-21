@@ -27,6 +27,8 @@ interface Props {
   onToggleCamera: () => void;
   onShare: () => void;
   onEnd: () => void;
+  /** Layers that must stay inside the full-screen element, e.g. the candidate's hidden canary. */
+  children?: React.ReactNode;
 }
 
 function elapsed(startedAt: number | null, now: number): string {
@@ -131,6 +133,8 @@ export function CallStage(props: Props) {
       onKeyDown={full ? wake : undefined}
       className={`relative flex flex-col bg-[#0f0f12] text-[#f2f1ec] ${full ? "h-screen w-screen cursor-default" : "aspect-[16/10] rounded-xl"} ${full && idle ? "cursor-none" : ""}`}
     >
+      {props.children}
+
       {/* Header */}
       <div className={`flex items-center justify-between px-5 py-3 text-[13px] text-[#b8b6ad] ${chrome}`}>
         <div className="flex items-center gap-3.5">
