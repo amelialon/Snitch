@@ -35,7 +35,7 @@ GPTZero one at a time; every report names which adapters produced it.
 
 ```bash
 cd backend && .venv/bin/python -m interview_review.cli serve   # API on :8000
-cd web && npm install && npm run dev                            # app on :3000
+cd web && npm install && npm run dev                           # app on :3000
 ```
 
 Upload a recording (or a transcript `.json`) plus an optional CV, and review the result.
